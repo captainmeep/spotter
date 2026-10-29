@@ -39,9 +39,7 @@ export default function Home() {
           <ButtonLink href="/login" variant="ghost">
             Log in
           </ButtonLink>
-          <ButtonLink href="/signup">
-            Sign up
-          </ButtonLink>
+          <ButtonLink href="/signup">Sign up</ButtonLink>
         </nav>
       </header>
 
@@ -57,9 +55,7 @@ export default function Home() {
           <ButtonLink href="/signup" size="lg">
             Create a trainer account
           </ButtonLink>
-          <ButtonLink
-            href="/login" variant="outline" size="lg"
-          >
+          <ButtonLink href="/login" variant="outline" size="lg">
             I&apos;m a client
           </ButtonLink>
         </div>
