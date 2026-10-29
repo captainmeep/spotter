@@ -1,12 +1,11 @@
-import Link from "next/link";
 import {
   CalendarDaysIcon,
   ClipboardListIcon,
   TrendingUpIcon,
   UsersIcon,
 } from "lucide-react";
+import { ButtonLink } from "@/components/button-link";
 import { Logo } from "@/components/logo";
-import { buttonVariants } from "@/components/ui/button";
 
 const features = [
   {
@@ -37,12 +36,12 @@ export default function Home() {
       <header className="mx-auto flex w-full max-w-5xl items-center justify-between px-4 py-4">
         <Logo />
         <nav className="flex items-center gap-2">
-          <Link href="/login" className={buttonVariants({ variant: "ghost" })}>
+          <ButtonLink href="/login" variant="ghost">
             Log in
-          </Link>
-          <Link href="/signup" className={buttonVariants()}>
+          </ButtonLink>
+          <ButtonLink href="/signup">
             Sign up
-          </Link>
+          </ButtonLink>
         </nav>
       </header>
 
@@ -55,15 +54,14 @@ export default function Home() {
           you can spend less time on admin and more time training.
         </p>
         <div className="mt-8 flex flex-wrap gap-3">
-          <Link href="/signup" className={buttonVariants({ size: "lg" })}>
+          <ButtonLink href="/signup" size="lg">
             Create a trainer account
-          </Link>
-          <Link
-            href="/login"
-            className={buttonVariants({ variant: "outline", size: "lg" })}
+          </ButtonLink>
+          <ButtonLink
+            href="/login" variant="outline" size="lg"
           >
             I&apos;m a client
-          </Link>
+          </ButtonLink>
         </div>
 
         <ul className="mt-16 grid gap-4 sm:grid-cols-2">

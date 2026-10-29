@@ -34,11 +34,11 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   };
 });
 
-// The signed-in user with the given role. Sends anyone else to the login page,
-// or to their own home page if they have a different role.
-export async function requireUser(role: Role): Promise<CurrentUser> {
+// The signed-in user, with the given role if one is passed. Sends anyone else
+// to the login page, or to their own home page if they have a different role.
+export async function requireUser(role?: Role): Promise<CurrentUser> {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (user.role !== role) redirect(homePathFor(user.role));
+  if (role && user.role !== role) redirect(homePathFor(user.role));
   return user;
 }

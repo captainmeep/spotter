@@ -1,15 +1,17 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
-import { CalendarDaysIcon, ClipboardListIcon } from "lucide-react";
+import { CalendarDaysIcon, ClipboardListIcon, TargetIcon } from "lucide-react";
 import { PageHeader, PageHeaderSkeleton } from "@/components/page-header";
 import {
   Card,
+  CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
 import { requireUser } from "@/lib/auth";
+import { getMyClientRecord } from "@/lib/clients";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "Home" };
@@ -19,6 +21,9 @@ export default function PortalPage() {
     <div className="flex flex-col gap-6">
       <Suspense fallback={<PageHeaderSkeleton />}>
         <Greeting />
+      </Suspense>
+      <Suspense fallback={<div className="h-28 animate-pulse rounded-xl bg-muted" />}>
+        <Goals />
       </Suspense>
       <div className="grid gap-4 sm:grid-cols-2">
         <Link href="/portal/program" className="group">
@@ -67,5 +72,29 @@ async function Greeting() {
           : undefined
       }
     />
+  );
+}
+
+async function Goals() {
+  const record = await getMyClientRecord();
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <TargetIcon className="size-4 text-muted-foreground" />
+          Your goals
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {record?.goals ? (
+          <p className="text-sm whitespace-pre-line">{record.goals}</p>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Your trainer hasn&apos;t added your goals yet.
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }

@@ -36,3 +36,25 @@ jobs:
       # Starts only Postgres and applies the migrations.
       - run: npx supabase db start
       - run: npx supabase test db
+
+  e2e:
+    name: End-to-end tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      # Local Supabase in Docker, .env.local, and the demo accounts.
+      - run: npm run local:up
+      # Builds the app and starts it (see playwright.config.ts).
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

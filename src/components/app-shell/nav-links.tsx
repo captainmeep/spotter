@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 export type NavItem = {
@@ -11,23 +11,40 @@ export type NavItem = {
   icon: ReactNode;
 };
 
-export function NavLinks({
-  items,
-  onNavigate,
-}: {
+type NavLinksProps = {
   items: NavItem[];
   onNavigate?: () => void;
-}) {
-  const pathname = usePathname();
+};
 
+// On pages whose URL holds data (like a client's id) the path is only known at
+// request time, so the links render without highlighting until it arrives.
+export function NavLinks(props: NavLinksProps) {
+  return (
+    <Suspense fallback={<NavList {...props} pathname={null} />}>
+      <ActiveNavLinks {...props} />
+    </Suspense>
+  );
+}
+
+function ActiveNavLinks(props: NavLinksProps) {
+  const pathname = usePathname();
+  return <NavList {...props} pathname={pathname} />;
+}
+
+function NavList({
+  items,
+  onNavigate,
+  pathname,
+}: NavLinksProps & { pathname: string | null }) {
   return (
     <nav className="flex flex-col gap-1">
       {items.map((item, index) => {
         // The first item is the area's home page, so only match it exactly.
         const active =
-          index === 0
+          pathname !== null &&
+          (index === 0
             ? pathname === item.href
-            : pathname === item.href || pathname.startsWith(`${item.href}/`);
+            : pathname === item.href || pathname.startsWith(`${item.href}/`));
         return (
           <Link
             key={item.href}

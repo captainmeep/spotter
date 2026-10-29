@@ -23,7 +23,59 @@ export type Database = {
           }
         },"public": {
           Tables: {
-            "profiles": {
+            "client_notes": {
+                  Row: {
+                    "author_id": string,"body": string,"client_id": string,"created_at": string,"id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "author_id"?: string,"body": string,"client_id": string,"created_at"?: string,"id"?: string
+                  }
+                  Update: {
+                    "author_id"?: string,"body"?: string,"client_id"?: string,"created_at"?: string,"id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "client_notes_author_id_fkey"
+      columns: ["author_id"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "client_notes_client_id_fkey"
+      columns: ["client_id"]
+isOneToOne: false
+      referencedRelation: "clients"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"clients": {
+                  Row: {
+                    "created_at": string,"email": string | null,"full_name": string,"goals": string,"id": string,"invited_at": string | null,"phone": string | null,"status": Database["public"]['Enums']["client_status"],"trainer_id": string,"updated_at": string,"user_id": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "created_at"?: string,"email"?: string | null,"full_name": string,"goals"?: string,"id"?: string,"invited_at"?: string | null,"phone"?: string | null,"status"?: Database["public"]['Enums']["client_status"],"trainer_id"?: string,"updated_at"?: string,"user_id"?: string | null
+                  }
+                  Update: {
+                    "created_at"?: string,"email"?: string | null,"full_name"?: string,"goals"?: string,"id"?: string,"invited_at"?: string | null,"phone"?: string | null,"status"?: Database["public"]['Enums']["client_status"],"trainer_id"?: string,"updated_at"?: string,"user_id"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "clients_trainer_id_fkey"
+      columns: ["trainer_id"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "clients_user_id_fkey"
+      columns: ["user_id"]
+isOneToOne: true
+      referencedRelation: "profiles"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"profiles": {
                   Row: {
                     "created_at": string,"full_name": string,"id": string,"role": Database["public"]['Enums']["user_role"],"trainer_id": string | null,"updated_at": string
                   }
@@ -52,7 +104,7 @@ isOneToOne: false
             [_ in never]: never
           }
           Enums: {
-            "user_role": "trainer"|"client"
+            "client_status": "active"|"inactive","user_role": "trainer"|"client"
           }
           CompositeTypes: {
             [_ in never]: never
@@ -172,7 +224,7 @@ export const Constants = {
           }
         },"public": {
           Enums: {
-            "user_role": ["trainer", "client"]
+            "client_status": ["active", "inactive"],"user_role": ["trainer", "client"]
           }
         }
 } as const

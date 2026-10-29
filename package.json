@@ -14,7 +14,8 @@
     "db:seed": "node --env-file=.env.local scripts/seed.mjs",
     "db:types": "supabase gen types typescript --local > src/lib/database.types.ts",
     "db:test": "supabase test db",
-    "local:up": "bash scripts/local-up.sh"
+    "local:up": "bash scripts/local-up.sh",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
@@ -24,14 +25,17 @@
     "cn": "^0.5.0",
     "lucide-react": "^1.64.0",
     "next": "16.4.3",
+    "next-themes": "^0.4.6",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "server-only": "^0.0.1",
     "shadcn": "^4.23.0",
+    "sonner": "^2.0.8",
     "tw-animate-css": "^1.4.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/turbopack": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
