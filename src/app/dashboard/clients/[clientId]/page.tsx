@@ -9,10 +9,10 @@ import {
   PhoneIcon,
   Trash2Icon,
 } from "lucide-react";
+import { ButtonLink } from "@/components/button-link";
 import { ConfirmAction } from "@/components/confirm-action";
 import { FormattedDate } from "@/components/formatted-date";
 import { PageHeaderSkeleton } from "@/components/page-header";
-import { buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -64,13 +64,12 @@ async function ClientDetail({ clientId }: { clientId: string }) {
           </div>
         </div>
         <div className="flex gap-2">
-          <Link
-            href={`/dashboard/clients/${client.id}/edit`}
-            className={buttonVariants({ variant: "outline" })}
+          <ButtonLink
+            href={`/dashboard/clients/${client.id}/edit`} variant="outline"
           >
             <PencilIcon />
             Edit
-          </Link>
+          </ButtonLink>
           <ConfirmAction
             action={deleteClientRecord.bind(null, client.id)}
             title={`Delete ${client.full_name}?`}

@@ -1,9 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useActionState } from "react";
+import { ButtonLink } from "@/components/button-link";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -99,9 +99,9 @@ export function ClientForm({
           </div>
         </CardContent>
         <CardFooter className="mt-6 flex justify-end gap-2">
-          <Link href={cancelHref} className={buttonVariants({ variant: "outline" })}>
+          <ButtonLink href={cancelHref} variant="outline">
             Cancel
-          </Link>
+          </ButtonLink>
           <Button type="submit" disabled={pending}>
             {pending ? "Saving…" : submitLabel}
           </Button>

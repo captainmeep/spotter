@@ -3,8 +3,8 @@ import Form from "next/form";
 import Link from "next/link";
 import { Suspense } from "react";
 import { ChevronRightIcon, PlusIcon, SearchIcon, UsersIcon } from "lucide-react";
+import { ButtonLink } from "@/components/button-link";
 import { PageHeader } from "@/components/page-header";
-import { buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { listClients, type ClientStatus } from "@/lib/clients";
 import { cn } from "@/lib/utils";
@@ -35,10 +35,10 @@ export default function ClientsPage({ searchParams }: PageProps<"/dashboard/clie
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <PageHeader title="Clients" description="Everyone you train, in one place." />
-        <Link href="/dashboard/clients/new" className={buttonVariants()}>
+        <ButtonLink href="/dashboard/clients/new">
           <PlusIcon />
           Add client
-        </Link>
+        </ButtonLink>
       </div>
 
       <Suspense fallback={<ListSkeleton />}>
@@ -109,10 +109,10 @@ async function ClientList({ filters }: { filters: Promise<Filters> }) {
           {search ? "No clients match your search." : emptyMessages[status ?? "all"]}
         </p>
         {!search && status !== "inactive" && (
-          <Link href="/dashboard/clients/new" className={buttonVariants({ variant: "outline" })}>
+          <ButtonLink href="/dashboard/clients/new" variant="outline">
             <PlusIcon />
             Add a client
-          </Link>
+          </ButtonLink>
         )}
       </div>
     );

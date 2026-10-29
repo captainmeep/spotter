@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { buttonVariants } from "@/components/ui/button";
+import { ButtonLink } from "@/components/button-link";
 import {
   Card,
   CardDescription,
@@ -22,9 +21,9 @@ export default function LinkExpiredPage() {
         </CardDescription>
       </CardHeader>
       <CardFooter>
-        <Link href="/login" className={buttonVariants({ className: "w-full" })}>
+        <ButtonLink href="/login" className="w-full">
           Go to log in
-        </Link>
+        </ButtonLink>
       </CardFooter>
     </Card>
   );

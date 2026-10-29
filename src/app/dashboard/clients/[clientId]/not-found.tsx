@@ -1,6 +1,5 @@
-import Link from "next/link";
 import { UserXIcon } from "lucide-react";
-import { buttonVariants } from "@/components/ui/button";
+import { ButtonLink } from "@/components/button-link";
 
 export default function ClientNotFound() {
   return (
@@ -8,9 +7,9 @@ export default function ClientNotFound() {
       <UserXIcon className="size-8 text-muted-foreground" />
       <p className="font-medium">We couldn&apos;t find that client.</p>
       <p className="text-sm text-muted-foreground">They may have been deleted.</p>
-      <Link href="/dashboard/clients" className={buttonVariants({ variant: "outline" })}>
+      <ButtonLink href="/dashboard/clients" variant="outline">
         Back to clients
-      </Link>
+      </ButtonLink>
     </div>
   );
 }
