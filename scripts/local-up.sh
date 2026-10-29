@@ -17,7 +17,17 @@ fi
 
 echo "Starting Supabase (the first run downloads images and takes a few minutes)..."
 # Skip services Spotter doesn't use yet, to start faster and use less memory.
-npx supabase start -x edge-runtime,logflare,vector,imgproxy,studio,postgres-meta,realtime,supavisor,storage-api >/dev/null
+# Containers can be slow to become healthy right after Docker starts, so retry once.
+start_supabase() {
+  npx supabase start -x edge-runtime,logflare,vector,imgproxy,studio,postgres-meta,realtime,supavisor,storage-api >/tmp/supabase-start.log 2>&1
+}
+if ! start_supabase; then
+  echo "Supabase didn't start cleanly, trying again..."
+  if ! start_supabase; then
+    tail -20 /tmp/supabase-start.log
+    exit 1
+  fi
+fi
 
 if [ ! -f .env.local ]; then
   echo "Creating .env.local..."
