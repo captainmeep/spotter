@@ -13,7 +13,8 @@
     "db:reset": "supabase db reset",
     "db:seed": "node --env-file=.env.local scripts/seed.mjs",
     "db:types": "supabase gen types typescript --local > src/lib/database.types.ts",
-    "db:test": "supabase test db"
+    "db:test": "supabase test db",
+    "local:up": "bash scripts/local-up.sh"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
