@@ -40,7 +40,6 @@ const sections: {
     icon: ClipboardListIcon,
     title: "Programs",
     description: "Build training programs and share them with clients.",
-    phase: 3,
   },
   {
     href: "/dashboard/schedule",

@@ -14,7 +14,19 @@ test("the trainer area works on a phone", async ({ page }) => {
   await page.getByRole("link", { name: /Casey Client/ }).click();
   await expect(page.getByRole("heading", { name: "Casey Client" })).toBeVisible();
 
-  for (const path of ["/dashboard", "/dashboard/clients", "/dashboard/clients/new"]) {
+  await page.goto("/dashboard/programs");
+  await page.getByRole("link", { name: /Half marathon strength/ }).click();
+  await expect(page.getByRole("heading", { name: "Half marathon strength" })).toBeVisible();
+  const programPath = new URL(page.url()).pathname;
+
+  for (const path of [
+    "/dashboard",
+    "/dashboard/clients",
+    "/dashboard/clients/new",
+    "/dashboard/programs",
+    "/dashboard/programs/exercises",
+    programPath,
+  ]) {
     await page.goto(path);
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(scrollWidth, `${path} scrolls sideways`).toBeLessThanOrEqual(page.viewportSize()!.width);
