@@ -14,7 +14,8 @@
     "db:seed": "node --env-file=.env.local scripts/seed.mjs",
     "db:types": "supabase gen types typescript --local > src/lib/database.types.ts",
     "db:test": "supabase test db",
-    "local:up": "bash scripts/local-up.sh"
+    "local:up": "bash scripts/local-up.sh",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
@@ -34,6 +35,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/turbopack": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

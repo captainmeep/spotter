@@ -8,7 +8,7 @@ export function homePathFor(role: Role) {
 }
 
 // Pages that need a signed-in user.
-export const protectedPrefixes = ["/dashboard", "/portal"];
+export const protectedPrefixes = ["/dashboard", "/portal", "/welcome"];
 
 // Pages only for signed-out visitors.
 export const authPages = ["/login", "/signup"];

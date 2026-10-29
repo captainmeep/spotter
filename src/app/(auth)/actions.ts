@@ -3,6 +3,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { requireUser } from "@/lib/auth";
 import { homePathFor } from "@/lib/routes";
 import { createClient } from "@/lib/supabase/server";
 
@@ -97,6 +98,35 @@ export async function signup(
   }
 
   redirect("/dashboard");
+}
+
+const passwordSchema = z
+  .string()
+  .min(8, "Use at least 8 characters for your password.")
+  .max(72, "Keep your password under 72 characters.");
+
+// For clients arriving from an invite link: they're signed in, but have no
+// password yet.
+export async function setPassword(
+  _prevState: AuthFormState,
+  formData: FormData,
+): Promise<AuthFormState> {
+  const user = await requireUser();
+  const parsed = passwordSchema.safeParse(formData.get("password"));
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+
+  const supabase = await createClient();
+  const { error } = await supabase.auth.updateUser({ password: parsed.data });
+  if (error) {
+    return {
+      error:
+        error.code === "same_password"
+          ? "That's already your password. Choose a different one, or skip this step."
+          : error.message,
+    };
+  }
+
+  redirect(homePathFor(user.role));
 }
 
 export async function logout() {

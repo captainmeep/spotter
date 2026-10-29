@@ -17,17 +17,23 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { requireUser } from "@/lib/auth";
-import { createClient } from "@/lib/supabase/server";
+import { countActiveClients } from "@/lib/clients";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
-const sections = [
+const sections: {
+  href: string;
+  icon: typeof UsersIcon;
+  title: string;
+  description: string;
+  // The build phase for sections that are still on the way.
+  phase?: number;
+}[] = [
   {
     href: "/dashboard/clients",
     icon: UsersIcon,
     title: "Clients",
     description: "Profiles, goals, notes and invites.",
-    phase: 2,
   },
   {
     href: "/dashboard/programs",
@@ -66,9 +72,11 @@ export default function DashboardPage() {
                 <Icon className="mb-2 size-5 text-muted-foreground" />
                 <CardTitle>{title}</CardTitle>
                 <CardDescription>{description}</CardDescription>
-                <CardAction>
-                  <Badge variant="secondary">Phase {phase}</Badge>
-                </CardAction>
+                {phase && (
+                  <CardAction>
+                    <Badge variant="secondary">Phase {phase}</Badge>
+                  </CardAction>
+                )}
               </CardHeader>
             </Card>
           </Link>
@@ -80,19 +88,13 @@ export default function DashboardPage() {
 
 async function Greeting() {
   const trainer = await requireUser("trainer");
-  const supabase = await createClient();
-  const { count } = await supabase
-    .from("profiles")
-    .select("id", { count: "exact", head: true })
-    .eq("trainer_id", trainer.id);
-
+  const clientCount = await countActiveClients();
   const firstName = trainer.fullName.split(" ")[0];
-  const clientCount = count ?? 0;
 
   return (
     <PageHeader
       title={firstName ? `Welcome back, ${firstName}` : "Welcome back"}
-      description={`You have ${clientCount} ${clientCount === 1 ? "client" : "clients"}.`}
+      description={`You have ${clientCount} active ${clientCount === 1 ? "client" : "clients"}.`}
     />
   );
 }
