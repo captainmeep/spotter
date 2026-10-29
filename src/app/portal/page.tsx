@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/card";
 import { requireUser } from "@/lib/auth";
 import { getMyClientRecord } from "@/lib/clients";
+import { getMyPrograms } from "@/lib/programs";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "Home" };
@@ -32,7 +33,9 @@ export default function PortalPage() {
               <ClipboardListIcon className="mb-2 size-5 text-muted-foreground" />
               <CardTitle>My program</CardTitle>
               <CardDescription>
-                The training program your trainer shares with you.
+                <Suspense fallback="Your training program.">
+                  <CurrentProgram />
+                </Suspense>
               </CardDescription>
             </CardHeader>
           </Card>
@@ -97,4 +100,11 @@ async function Goals() {
       </CardContent>
     </Card>
   );
+}
+
+async function CurrentProgram() {
+  const [latest] = await getMyPrograms();
+  if (!latest) return "Your trainer will share your program here.";
+  const workouts = latest.program.program_workouts.length;
+  return `${latest.program.name} · ${workouts} ${workouts === 1 ? "workout" : "workouts"}`;
 }

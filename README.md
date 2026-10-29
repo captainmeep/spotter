@@ -2,7 +2,7 @@
 
 Client management, training programs, scheduling and sales for personal trainers.
 
-Trainers sign up and manage their business from the **dashboard**. Clients are invited by their trainer and use the **client portal** to see their goals, and soon their program and sessions.
+Trainers sign up and manage their business from the **dashboard**. Clients are invited by their trainer and use the **client portal** to see their goals and training programs, and soon their sessions.
 
 ## Roadmap
 
@@ -10,8 +10,8 @@ Trainers sign up and manage their business from the **dashboard**. Clients are i
 | --- | --- | --- |
 | 1 | Foundation: app, database, trainer and client logins, layouts | Done |
 | 2 | Clients: list, profiles, goals, notes, invites | Done |
-| 3 | Training programs: exercise library, program builder, sharing with clients | Next |
-| 4 | Scheduling: calendar and session booking | Planned |
+| 3 | Training programs: exercise library, program builder, sharing with clients | Done |
+| 4 | Scheduling: calendar and session booking | Next |
 | 5 | Sales pipeline: leads board and converting leads to clients | Planned |
 
 Later: payments (Stripe), marketing emails and texts.
@@ -72,6 +72,7 @@ src/
     auth/confirm/       Where links in Supabase emails land
     dashboard/          Trainer area
       clients/          Client list, profiles, notes, invites
+      programs/         Programs, the program builder, and the exercise library
     portal/             Client area
     (auth)/welcome/     Invited clients choose a password here
   components/
@@ -80,6 +81,8 @@ src/
   lib/
     auth.ts             getCurrentUser() and requireUser(role)
     clients.ts          Reading client data for pages
+    programs.ts         Reading exercises and programs for pages
+    starter-exercises.json  Exercises new trainers can add with one click
     supabase/           Supabase clients: per-request, proxy, and admin
   proxy.ts              Refreshes the session and redirects signed-out users
 supabase/
@@ -96,6 +99,7 @@ scripts/                Local setup and seed scripts
 - Trainers add clients as records in the `clients` table. A client record doesn't need a login.
 - **Invites:** on a client's page, the trainer creates a one-time login link and sends it however they like (text, email, WhatsApp). Opening it creates the client's login (role `client`, set in Supabase `app_metadata` by the server) and asks them to choose a password. If the link expires, the trainer can create a new one. Deleting a client also deletes their login.
 - Notes on a client are private to the trainer. Clients can see their own goals.
+- **Programs:** each trainer has an exercise library. A program has workouts (for example "Day 1: Lower body"), each a list of exercises with sets, reps, weight, rest and notes, repeated for a number of weeks. Trainers share a program with any of their clients; clients see only programs shared with them, and the instructions and videos for the exercises in them. Editing a program updates it for everyone it's shared with, so to tailor one for a single client, duplicate it first.
 - Row level security in Postgres decides what each user can read and change, so even a bug in the app can't leak another trainer's data. Trainers see only their own clients and notes; clients see only their own record and their trainer.
 - Trainers land on `/dashboard`, clients on `/portal`. Each area checks the role and sends anyone else to the right place.
 

@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Browser, type Page } from "@playwright/test";
 
 export const DEMO_PASSWORD = "password123";
 export const TRAINER_EMAIL = "trainer@example.com";
@@ -41,4 +41,36 @@ export async function signUpTrainer(page: Page, name = "Jordan Newcoach") {
   await page.getByRole("button", { name: "Create account" }).click();
   await expect(page).toHaveURL("/dashboard");
   return email;
+}
+
+// Adds a client and accepts their invite in a separate browser, so tests can
+// check what the client sees. Delete the client at the end with deleteClient().
+export async function addInvitedClient(page: Page, browser: Browser, label: string) {
+  const client = uniqueClient(label);
+  await page.goto("/dashboard/clients/new");
+  await page.getByLabel("Name").fill(client.name);
+  await page.getByLabel("Email").fill(client.email);
+  await page.getByRole("button", { name: "Add client" }).click();
+  await expect(page.getByRole("heading", { name: client.name })).toBeVisible();
+  const clientUrl = page.url();
+
+  await page.getByRole("button", { name: "Invite to Spotter" }).click();
+  const link = await page.getByLabel("Login link").inputValue();
+  await page.keyboard.press("Escape");
+
+  const context = await browser.newContext();
+  const clientPage = await context.newPage();
+  await clientPage.goto(link);
+  await expect(clientPage).toHaveURL("/welcome");
+  await clientPage.getByRole("link", { name: "Skip for now" }).click();
+  await expect(clientPage).toHaveURL("/portal");
+
+  return { ...client, clientUrl, clientPage, context };
+}
+
+export async function deleteClient(page: Page, clientUrl: string) {
+  await page.goto(clientUrl);
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await page.getByRole("button", { name: "Delete client" }).click();
+  await expect(page).toHaveURL("/dashboard/clients");
 }

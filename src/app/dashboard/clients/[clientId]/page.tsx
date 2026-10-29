@@ -8,11 +8,13 @@ import {
   PencilIcon,
   PhoneIcon,
   Trash2Icon,
+  XIcon,
 } from "lucide-react";
 import { ButtonLink } from "@/components/button-link";
 import { ConfirmAction } from "@/components/confirm-action";
 import { FormattedDate } from "@/components/formatted-date";
 import { PageHeaderSkeleton } from "@/components/page-header";
+import { ShareForm } from "@/components/share-form";
 import {
   Card,
   CardContent,
@@ -21,6 +23,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { getClient, getClientNotes, type Client } from "@/lib/clients";
+import { getClientPrograms, listPrograms } from "@/lib/programs";
+import { shareProgram, unshareProgram } from "../../programs/actions";
 import { deleteClientRecord, deleteNote } from "../actions";
 import { PortalBadge, StatusBadge } from "../client-badges";
 import { InviteButton } from "./invite-button";
@@ -102,6 +106,9 @@ async function ClientDetail({ clientId }: { clientId: string }) {
               )}
             </CardContent>
           </Card>
+          <Suspense fallback={<div className="h-32 animate-pulse rounded-xl bg-muted" />}>
+            <ProgramsCard clientId={client.id} />
+          </Suspense>
           <PortalAccessCard client={client} />
         </div>
 
@@ -155,6 +162,69 @@ function ContactCard({ client }: { client: Client }) {
   );
 }
 
+async function ProgramsCard({ clientId }: { clientId: string }) {
+  const [shared, programs] = await Promise.all([getClientPrograms(clientId), listPrograms()]);
+  const sharedIds = new Set(shared.map(({ program }) => program.id));
+  const available = programs.filter((program) => !sharedIds.has(program.id));
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Programs</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        {shared.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No programs shared yet.</p>
+        ) : (
+          <ul className="flex flex-col divide-y">
+            {shared.map(({ program }) => (
+              <li key={program.id} className="flex items-center gap-2 py-2 first:pt-0 last:pb-0">
+                <Link
+                  href={`/dashboard/programs/${program.id}`}
+                  className="min-w-0 flex-1 truncate text-sm font-medium hover:underline"
+                >
+                  {program.name}
+                </Link>
+                <ConfirmAction
+                  action={unshareProgram.bind(null, program.id, clientId)}
+                  title={`Stop sharing ${program.name}?`}
+                  description="It won't show in their portal anymore. The program itself isn't deleted."
+                  confirmLabel="Stop sharing"
+                  pendingLabel="Removing…"
+                  triggerVariant="ghost"
+                  triggerSize="icon-sm"
+                  triggerLabel={`Stop sharing ${program.name}`}
+                >
+                  <XIcon />
+                </ConfirmAction>
+              </li>
+            ))}
+          </ul>
+        )}
+        {available.length > 0 ? (
+          <ShareForm
+            action={shareProgram}
+            fixed={{ name: "client_id", value: clientId }}
+            select={{ name: "program_id", label: "Program to share" }}
+            options={available.map((program) => ({ value: program.id, label: program.name }))}
+            placeholder="Choose a program"
+            submitLabel="Share"
+          />
+        ) : (
+          programs.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              <Link href="/dashboard/programs/new" className="underline underline-offset-4">
+                Create a program
+              </Link>{" "}
+              to share it.
+            </p>
+          )
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function PortalAccessCard({ client }: { client: Client }) {
   const firstName = client.full_name.split(" ")[0];
   const invited = Boolean(client.user_id);
@@ -170,7 +240,7 @@ function PortalAccessCard({ client }: { client: Client }) {
               link or it expired, create a new one.
             </>
           ) : (
-            `${firstName} can't log in yet. Invite them to see their goals, and soon their program and sessions.`
+            `${firstName} can't log in yet. Invite them to see their goals and programs.`
           )}
         </CardDescription>
       </CardHeader>
