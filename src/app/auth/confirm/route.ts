@@ -1,10 +1,11 @@
 import type { EmailOtpType } from "@supabase/supabase-js";
-import { NextResponse, type NextRequest } from "next/server";
+import { redirect } from "next/navigation";
+import type { NextRequest } from "next/server";
 import { safeRedirectPath } from "@/lib/routes";
 import { createClient } from "@/lib/supabase/server";
 
-// Where links in Supabase emails (sign-up confirmation, and invites later)
-// land. Signs the user in and sends them on to `next`.
+// Where invite and sign-in links land. Signs the user in and sends them on to
+// `next`.
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const tokenHash = searchParams.get("token_hash");
@@ -21,5 +22,8 @@ export async function GET(request: NextRequest) {
     ({ error } = await supabase.auth.exchangeCodeForSession(code));
   }
 
-  return NextResponse.redirect(new URL(error ? "/link-expired" : next, request.url));
+  // A relative redirect. Building an absolute URL from request.url would use
+  // the server's own address (like 0.0.0.0:8080 in a container), not the one
+  // the visitor is on.
+  redirect(error ? "/link-expired" : next);
 }
