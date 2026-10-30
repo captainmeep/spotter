@@ -1,6 +1,7 @@
 "use client";
 
-import { LogOutIcon } from "lucide-react";
+import Link from "next/link";
+import { LogOutIcon, SettingsIcon } from "lucide-react";
 import { useTransition } from "react";
 import { logout } from "@/app/(auth)/actions";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -14,7 +15,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { Role } from "@/lib/routes";
+import { homePathFor, type Role } from "@/lib/routes";
 
 function initials(name: string) {
   return name
@@ -55,6 +56,10 @@ export function UserMenuButton({
           </DropdownMenuLabel>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
+        <DropdownMenuItem render={<Link href={`${homePathFor(role)}/account`} />}>
+          <SettingsIcon />
+          Account settings
+        </DropdownMenuItem>
         <DropdownMenuItem
           disabled={pending}
           onClick={() => startTransition(() => logout())}

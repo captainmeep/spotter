@@ -11,7 +11,7 @@ export function homePathFor(role: Role) {
 export const protectedPrefixes = ["/dashboard", "/portal", "/welcome"];
 
 // Pages only for signed-out visitors.
-export const authPages = ["/login", "/signup"];
+export const authPages = ["/login"];
 
 // Only allow redirects to paths inside the app, never to another site.
 export function safeRedirectPath(path: string | null, fallback = "/") {

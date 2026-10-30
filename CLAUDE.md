@@ -2,14 +2,15 @@
 
 # Spotter
 
-CRM for a personal trainer: clients, training programs, scheduling, sales pipeline. Trainers use `/dashboard`, their clients use `/portal`. See README.md for the roadmap and setup.
+CRM for one personal trainer, Scott Jackman: clients, training programs, scheduling, sales pipeline. Scott uses `/dashboard`, his clients use `/portal`, and the public home page shows his profile (from `src/lib/trainer-profile.ts`, photo in `src/assets/`). Don't use the gym's (Hardstyle Strength) name or branding. There's no public sign-up; clients join by invite link. See README.md for the roadmap and setup, and DEPLOY.md for production.
 
 ## Commands
 
 - `npm run local:up`: start Docker, local Supabase, write `.env.local`, seed demo users. Run this first in a fresh cloud session; Docker isn't running by default there.
 - `npm run dev`: app at http://localhost:3000. Demo logins: `trainer@example.com` / `client@example.com`, password `password123`.
 - Before committing: `npm run lint`, `npm run typecheck`, `npm run build`, `npm run db:test` if the schema changed, and `npm run test:e2e` (Playwright; reuses a running dev server).
-- E2E tests may read the demo data but must not change it; anything they create gets a unique name and is deleted at the end.
+- E2E tests may read the demo data but must not change it; anything they create gets a unique name and is deleted at the end. Use `logInAsNewTrainer()` (admin API) when a test needs a fresh trainer.
+- Migrations merged into `main` are applied to the live database automatically by `.github/workflows/deploy-database.yml`, so treat every merged migration as permanent.
 
 ## Conventions
 

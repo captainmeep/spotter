@@ -18,8 +18,7 @@ export const metadata: Metadata = {
     default: "Spotter",
     template: "%s · Spotter",
   },
-  description:
-    "Client management, training programs, scheduling and sales for personal trainers.",
+  description: "Training programs and sessions with your personal trainer.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

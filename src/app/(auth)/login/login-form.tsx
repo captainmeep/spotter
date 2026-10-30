@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useActionState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -14,6 +13,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { trainerProfile } from "@/lib/trainer-profile";
 import { login, type AuthFormState } from "../actions";
 
 export function LoginForm() {
@@ -26,7 +26,7 @@ export function LoginForm() {
     <Card>
       <CardHeader>
         <CardTitle>Log in</CardTitle>
-        <CardDescription>For trainers and their clients.</CardDescription>
+        <CardDescription>For {trainerProfile.firstName} and his clients.</CardDescription>
       </CardHeader>
       <form action={formAction}>
         <CardContent className="flex flex-col gap-4">
@@ -61,11 +61,8 @@ export function LoginForm() {
           <Button type="submit" className="w-full" disabled={pending}>
             {pending ? "Logging in…" : "Log in"}
           </Button>
-          <p className="text-sm text-muted-foreground">
-            New trainer?{" "}
-            <Link href="/signup" className="text-foreground underline underline-offset-4">
-              Create an account
-            </Link>
+          <p className="text-center text-sm text-muted-foreground">
+            New client? Ask {trainerProfile.firstName} for your invite link.
           </p>
         </CardFooter>
       </form>

@@ -4,7 +4,7 @@ import {
   deleteClient,
   logInAsTrainer,
   logOut,
-  signUpTrainer,
+  logInAsNewTrainer,
   uniqueClient,
 } from "./helpers";
 
@@ -167,7 +167,7 @@ test("trainers can manage their exercise library", async ({ page }) => {
 });
 
 test("new trainers can start from the starter exercises", async ({ page }) => {
-  await signUpTrainer(page);
+  await logInAsNewTrainer(page);
   await page.goto("/dashboard/programs/exercises");
   await expect(page.getByText("Your exercise library is empty.")).toBeVisible();
   await page.getByRole("button", { name: "Add starter exercises" }).click();
@@ -183,7 +183,7 @@ test("trainers only see their own programs", async ({ page }) => {
   const programUrl = page.url();
   await logOut(page);
 
-  await signUpTrainer(page);
+  await logInAsNewTrainer(page);
   await page.goto("/dashboard/programs");
   await expect(page.getByText("No programs yet.")).toBeVisible();
   await page.goto(programUrl);
