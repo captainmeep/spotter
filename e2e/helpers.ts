@@ -1,4 +1,7 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { expect, type Browser, type Page } from "@playwright/test";
+import { createClient } from "@supabase/supabase-js";
 
 export const DEMO_PASSWORD = "password123";
 export const TRAINER_EMAIL = "trainer@example.com";
@@ -31,16 +34,36 @@ export function uniqueClient(label: string) {
   };
 }
 
-// Signs up a brand-new trainer, who starts with no clients.
-export async function signUpTrainer(page: Page, name = "Jordan Newcoach") {
+// The local Supabase settings written by `npm run local:up`.
+function localEnv() {
+  const env: Record<string, string> = {};
+  for (const line of readFileSync(join(process.cwd(), ".env.local"), "utf8").split("\n")) {
+    const match = line.match(/^([A-Z_]+)=(.*)$/);
+    if (match) env[match[1]] = match[2].replace(/^"(.*)"$/, "$1");
+  }
+  return env;
+}
+
+// Creates a brand-new trainer, who starts with no clients, and logs in as
+// them. Public sign-up is off, so this uses the admin API.
+export async function logInAsNewTrainer(page: Page, name = "Jordan Newcoach") {
+  const env = localEnv();
+  const admin = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SECRET_KEY, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
   const { email } = uniqueClient("trainer");
-  await page.goto("/signup");
-  await page.getByLabel("Your name").fill(name);
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill("a-good-password");
-  await page.getByRole("button", { name: "Create account" }).click();
+  const password = "a-good-password";
+  const { error } = await admin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: { full_name: name },
+  });
+  if (error) throw error;
+
+  await logIn(page, email, password);
   await expect(page).toHaveURL("/dashboard");
-  return email;
+  return { email, password };
 }
 
 // Adds a client and accepts their invite in a separate browser, so tests can

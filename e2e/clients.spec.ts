@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { logIn, logInAsTrainer, logOut, signUpTrainer, uniqueClient } from "./helpers";
+import { logIn, logInAsTrainer, logOut, logInAsNewTrainer, uniqueClient } from "./helpers";
 
 test("trainers can add, find, edit and delete a client", async ({ page }) => {
   const client = uniqueClient("Riley");
@@ -161,7 +161,7 @@ test("trainers only see their own clients", async ({ page }) => {
   const morganUrl = page.url();
   await logOut(page);
 
-  await signUpTrainer(page);
+  await logInAsNewTrainer(page);
   await page.goto("/dashboard/clients");
   await expect(page.getByText("No active clients yet.")).toBeVisible();
   await page.goto(morganUrl);

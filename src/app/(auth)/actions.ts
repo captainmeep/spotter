@@ -1,6 +1,6 @@
 "use server";
 
-import { headers } from "next/headers";
+import { refresh } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
@@ -9,10 +9,8 @@ import { createClient } from "@/lib/supabase/server";
 
 export type AuthFormState = {
   error?: string;
-  message?: string;
-  // Sent back so the form keeps what the user typed after an error.
+  // Sent back so the login form keeps the email after an error.
   email?: string;
-  fullName?: string;
 };
 
 const loginSchema = z.object({
@@ -54,52 +52,6 @@ export async function login(
   redirect(homePathFor(profile?.role ?? "trainer"));
 }
 
-const signupSchema = z.object({
-  fullName: z.string().trim().min(1, "Enter your name.").max(100),
-  email: z.email("Enter a valid email address."),
-  password: z.string().min(8, "Use at least 8 characters for your password."),
-});
-
-// Public sign-up is for trainers. Clients are invited by their trainer.
-export async function signup(
-  _prevState: AuthFormState,
-  formData: FormData,
-): Promise<AuthFormState> {
-  const email = String(formData.get("email") ?? "").trim();
-  const fullName = String(formData.get("fullName") ?? "");
-  const parsed = signupSchema.safeParse({
-    fullName,
-    email,
-    password: formData.get("password"),
-  });
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0].message, email, fullName };
-  }
-
-  const origin = (await headers()).get("origin") ?? "";
-  const supabase = await createClient();
-  const { data, error } = await supabase.auth.signUp({
-    email: parsed.data.email,
-    password: parsed.data.password,
-    options: {
-      data: { full_name: parsed.data.fullName },
-      emailRedirectTo: `${origin}/auth/confirm?next=/dashboard`,
-    },
-  });
-  if (error) {
-    return { error: error.message, email, fullName };
-  }
-
-  // No session means the project requires email confirmation first.
-  if (!data.session) {
-    return {
-      message: `We sent a confirmation link to ${parsed.data.email}. Open it to finish signing up.`,
-    };
-  }
-
-  redirect("/dashboard");
-}
-
 const passwordSchema = z
   .string()
   .min(8, "Use at least 8 characters for your password.")
@@ -127,6 +79,58 @@ export async function setPassword(
   }
 
   redirect(homePathFor(user.role));
+}
+
+export type AccountFormState = { error?: string; message?: string };
+
+const nameSchema = z
+  .string()
+  .trim()
+  .min(1, "Enter your name.")
+  .max(100, "Keep your name under 100 characters.");
+
+export async function updateName(
+  _prevState: AccountFormState,
+  formData: FormData,
+): Promise<AccountFormState> {
+  const user = await requireUser();
+  const parsed = nameSchema.safeParse(formData.get("full_name") ?? "");
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("profiles")
+    .update({ full_name: parsed.data })
+    .eq("id", user.id);
+  if (error) return { error: error.message };
+
+  refresh();
+  return { message: "Name saved." };
+}
+
+export async function changePassword(
+  _prevState: AccountFormState,
+  formData: FormData,
+): Promise<AccountFormState> {
+  await requireUser();
+  const password = formData.get("password");
+  if (password !== formData.get("confirm_password")) {
+    return { error: "The two passwords don't match." };
+  }
+  const parsed = passwordSchema.safeParse(password);
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+
+  const supabase = await createClient();
+  const { error } = await supabase.auth.updateUser({ password: parsed.data });
+  if (error) {
+    return {
+      error:
+        error.code === "same_password"
+          ? "That's already your password. Choose a different one."
+          : error.message,
+    };
+  }
+  return { message: "Password changed." };
 }
 
 export async function logout() {
