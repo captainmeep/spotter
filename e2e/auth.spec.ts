@@ -68,9 +68,11 @@ test("people can change their name and password", async ({ page }) => {
   await page.getByRole("button", { name: "Account menu" }).click();
   await page.getByRole("menuitem", { name: "Account settings" }).click();
   await expect(page).toHaveURL("/dashboard/account");
+  await expect(page.getByRole("menu")).toBeHidden();
   await expect(page.getByText(`Logged in as ${email}`)).toBeVisible();
 
-  await page.getByLabel("Name").fill("Robin Renamed");
+  // Exact, so it doesn't also match the account menu (labelled "Pat Newname").
+  await page.getByRole("textbox", { name: "Name", exact: true }).fill("Robin Renamed");
   await page.getByRole("button", { name: "Save name" }).click();
   await expect(page.getByText("Name saved.")).toBeVisible();
 
