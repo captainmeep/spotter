@@ -1,0 +1,11 @@
+# Files Cloud Build doesn't need (keeps the upload small and secret-free).
+.git
+.github
+.next
+node_modules
+.env*
+!.env.example
+e2e
+playwright-report
+test-results
+supabase

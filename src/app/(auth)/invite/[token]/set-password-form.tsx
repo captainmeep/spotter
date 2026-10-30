@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useActionState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -14,17 +13,11 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { setPassword, type AuthFormState } from "../actions";
+import { acceptInvite, type AuthFormState } from "../../actions";
 
-export function SetPasswordForm({
-  firstName,
-  skipHref,
-}: {
-  firstName: string;
-  skipHref: string;
-}) {
+export function SetPasswordForm({ token, firstName }: { token: string; firstName: string }) {
   const [state, formAction, pending] = useActionState<AuthFormState, FormData>(
-    setPassword,
+    acceptInvite.bind(null, token),
     {},
   );
 
@@ -33,7 +26,7 @@ export function SetPasswordForm({
       <CardHeader>
         <CardTitle>{firstName ? `Welcome, ${firstName}!` : "Welcome!"}</CardTitle>
         <CardDescription>
-          Choose a password so you can log in to Spotter next time.
+          Choose a password. You&apos;ll use it with your email to log in to Spotter.
         </CardDescription>
       </CardHeader>
       <form action={formAction}>
@@ -57,13 +50,10 @@ export function SetPasswordForm({
             <p className="text-xs text-muted-foreground">At least 8 characters.</p>
           </div>
         </CardContent>
-        <CardFooter className="mt-6 flex flex-col gap-3">
+        <CardFooter className="mt-6">
           <Button type="submit" className="w-full" disabled={pending}>
-            {pending ? "Saving…" : "Save password"}
+            {pending ? "Saving…" : "Save password and log in"}
           </Button>
-          <Link href={skipHref} className="text-sm text-muted-foreground underline underline-offset-4">
-            Skip for now
-          </Link>
         </CardFooter>
       </form>
     </Card>

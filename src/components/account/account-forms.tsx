@@ -78,6 +78,15 @@ export function PasswordForm() {
       <form action={formAction}>
         <CardContent className="flex flex-col gap-4">
           <Result state={state} />
+          <FormField id="account-current-password" label="Current password">
+            <Input
+              id="account-current-password"
+              name="current_password"
+              type="password"
+              autoComplete="current-password"
+              required
+            />
+          </FormField>
           <FormField id="account-password" label="New password">
             <Input
               id="account-password"

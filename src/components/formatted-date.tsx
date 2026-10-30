@@ -6,12 +6,12 @@ export function FormattedDate({
   date,
   withTime = false,
 }: {
-  date: string;
+  date: Date | string;
   withTime?: boolean;
 }) {
   const value = new Date(date);
   return (
-    <time dateTime={date} suppressHydrationWarning>
+    <time dateTime={value.toISOString()} suppressHydrationWarning>
       {value.toLocaleString(undefined, {
         dateStyle: "medium",
         ...(withTime ? { timeStyle: "short" } : {}),

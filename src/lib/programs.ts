@@ -1,92 +1,136 @@
 import "server-only";
+import { type ExpressionBuilder, type Selectable } from "kysely";
+import { jsonArrayFrom, jsonBuildObject } from "kysely/helpers/postgres";
 import { z } from "zod";
-import type { Database } from "@/lib/database.types";
 import { requireUser } from "@/lib/auth";
-import { createClient } from "@/lib/supabase/server";
+import { asUser, type DB } from "@/lib/db";
+import type { Exercises } from "@/lib/db/types";
 
-export type Exercise = Database["public"]["Tables"]["exercises"]["Row"];
+export type Exercise = Selectable<Exercises>;
 
 const uuid = z.uuid();
 
-// The columns of a program with its workouts and their exercises, in order.
-const programDetail = `
-  id, name, description, duration_weeks,
-  program_workouts (
-    id, name, position,
-    workout_exercises (
-      id, position, sets, reps, weight, rest, notes,
-      exercise:exercises ( id, name, category, instructions, video_url )
-    )
-  )
-` as const;
-
-function sortProgram<
-  T extends {
-    program_workouts: { position: number; workout_exercises: { position: number }[] }[];
-  },
->(program: T): T {
-  program.program_workouts.sort((a, b) => a.position - b.position);
-  for (const workout of program.program_workouts) {
-    workout.workout_exercises.sort((a, b) => a.position - b.position);
-  }
-  return program;
+// A program's workouts and their exercises, in order, as nested JSON.
+function workoutsOf(eb: ExpressionBuilder<DB, "programs">) {
+  return jsonArrayFrom(
+    eb
+      .selectFrom("program_workouts as w")
+      .select((workout) => [
+        "w.id",
+        "w.name",
+        "w.position",
+        jsonArrayFrom(
+          workout
+            .selectFrom("workout_exercises as we")
+            .innerJoin("exercises as e", "e.id", "we.exercise_id")
+            .select((item) => [
+              "we.id",
+              "we.position",
+              "we.sets",
+              "we.reps",
+              "we.weight",
+              "we.rest",
+              "we.notes",
+              jsonBuildObject({
+                id: item.ref("e.id"),
+                name: item.ref("e.name"),
+                category: item.ref("e.category"),
+                instructions: item.ref("e.instructions"),
+                video_url: item.ref("e.video_url"),
+              }).as("exercise"),
+            ])
+            .whereRef("we.workout_id", "=", "w.id")
+            .orderBy("we.position")
+            .orderBy("we.created_at"),
+        ).as("workout_exercises"),
+      ])
+      .whereRef("w.program_id", "=", "programs.id")
+      .orderBy("w.position")
+      .orderBy("w.created_at"),
+  ).as("program_workouts");
 }
 
-// Every function checks the signed-in user itself. Row level security is the
-// second line of defense.
+// Every function checks the signed-in user itself, then queries with
+// asUser(), so row level security is the second line of defense.
 
 export async function listExercises() {
-  await requireUser("trainer");
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("exercises")
-    .select("id, name, category, instructions, video_url, workout_exercises(count)")
-    .order("category")
-    .order("name");
-  if (error) throw error;
-  return data.map(({ workout_exercises, ...exercise }) => ({
-    ...exercise,
-    usedCount: workout_exercises[0]?.count ?? 0,
-  }));
+  const trainer = await requireUser("trainer");
+  const rows = await asUser(trainer.id, (db) =>
+    db
+      .selectFrom("exercises")
+      .select((eb) => [
+        "id",
+        "name",
+        "category",
+        "instructions",
+        "video_url",
+        eb
+          .selectFrom("workout_exercises")
+          .select((sub) => sub.fn.countAll<string>().as("count"))
+          .whereRef("workout_exercises.exercise_id", "=", "exercises.id")
+          .as("used_count"),
+      ])
+      .orderBy("category")
+      .orderBy("name")
+      .execute(),
+  );
+  return rows.map(({ used_count, ...exercise }) => ({ ...exercise, usedCount: Number(used_count ?? 0) }));
 }
 
 export async function listPrograms() {
-  await requireUser("trainer");
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("programs")
-    .select("id, name, description, duration_weeks, program_workouts(count), client_programs(count)")
-    .order("name");
-  if (error) throw error;
-  return data.map(({ program_workouts, client_programs, ...program }) => ({
+  const trainer = await requireUser("trainer");
+  const rows = await asUser(trainer.id, (db) =>
+    db
+      .selectFrom("programs")
+      .select((eb) => [
+        "id",
+        "name",
+        "description",
+        "duration_weeks",
+        eb
+          .selectFrom("program_workouts")
+          .select((sub) => sub.fn.countAll<string>().as("count"))
+          .whereRef("program_workouts.program_id", "=", "programs.id")
+          .as("workout_count"),
+        eb
+          .selectFrom("client_programs")
+          .select((sub) => sub.fn.countAll<string>().as("count"))
+          .whereRef("client_programs.program_id", "=", "programs.id")
+          .as("client_count"),
+      ])
+      .orderBy("name")
+      .execute(),
+  );
+  return rows.map(({ workout_count, client_count, ...program }) => ({
     ...program,
-    workoutCount: program_workouts[0]?.count ?? 0,
-    clientCount: client_programs[0]?.count ?? 0,
+    workoutCount: Number(workout_count ?? 0),
+    clientCount: Number(client_count ?? 0),
   }));
 }
 
 export async function countPrograms() {
-  await requireUser("trainer");
-  const supabase = await createClient();
-  const { count, error } = await supabase
-    .from("programs")
-    .select("id", { count: "exact", head: true });
-  if (error) throw error;
-  return count ?? 0;
+  const trainer = await requireUser("trainer");
+  const result = await asUser(trainer.id, (db) =>
+    db
+      .selectFrom("programs")
+      .select((eb) => eb.fn.countAll<string>().as("count"))
+      .executeTakeFirstOrThrow(),
+  );
+  return Number(result.count);
 }
 
 export async function getProgram(id: string) {
-  await requireUser("trainer");
+  const trainer = await requireUser("trainer");
   if (!uuid.safeParse(id).success) return null;
 
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("programs")
-    .select(programDetail)
-    .eq("id", id)
-    .maybeSingle();
-  if (error) throw error;
-  return data && sortProgram(data);
+  const program = await asUser(trainer.id, (db) =>
+    db
+      .selectFrom("programs")
+      .select((eb) => ["id", "name", "description", "duration_weeks", workoutsOf(eb)])
+      .where("id", "=", id)
+      .executeTakeFirst(),
+  );
+  return program ?? null;
 }
 
 export type ProgramDetail = NonNullable<Awaited<ReturnType<typeof getProgram>>>;
@@ -95,44 +139,54 @@ export type WorkoutExercise = Workout["workout_exercises"][number];
 
 // The clients a program is shared with.
 export async function getProgramClients(programId: string) {
-  await requireUser("trainer");
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("client_programs")
-    .select("assigned_at, client:clients ( id, full_name, status )")
-    .eq("program_id", programId)
-    .order("assigned_at");
-  if (error) throw error;
-  return data;
+  const trainer = await requireUser("trainer");
+  const rows = await asUser(trainer.id, (db) =>
+    db
+      .selectFrom("client_programs")
+      .innerJoin("clients", "clients.id", "client_programs.client_id")
+      .select(["client_programs.assigned_at", "clients.id", "clients.full_name", "clients.status"])
+      .where("client_programs.program_id", "=", programId)
+      .orderBy("client_programs.assigned_at")
+      .execute(),
+  );
+  return rows.map(({ assigned_at, ...client }) => ({ assigned_at, client }));
 }
 
 // The programs shared with one of the trainer's clients.
 export async function getClientPrograms(clientId: string) {
-  await requireUser("trainer");
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("client_programs")
-    .select("assigned_at, program:programs ( id, name, duration_weeks )")
-    .eq("client_id", clientId)
-    .order("assigned_at", { ascending: false });
-  if (error) throw error;
-  return data;
+  const trainer = await requireUser("trainer");
+  const rows = await asUser(trainer.id, (db) =>
+    db
+      .selectFrom("client_programs")
+      .innerJoin("programs", "programs.id", "client_programs.program_id")
+      .select(["client_programs.assigned_at", "programs.id", "programs.name", "programs.duration_weeks"])
+      .where("client_programs.client_id", "=", clientId)
+      .orderBy("client_programs.assigned_at", "desc")
+      .execute(),
+  );
+  return rows.map(({ assigned_at, ...program }) => ({ assigned_at, program }));
 }
 
 // For the client portal: the programs shared with the signed-in client,
 // newest first, with their workouts and exercises.
 export async function getMyPrograms() {
-  await requireUser("client");
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("client_programs")
-    .select(`assigned_at, program:programs ( ${programDetail} )`)
-    .order("assigned_at", { ascending: false });
-  if (error) throw error;
-  return data.map(({ assigned_at, program }) => ({
-    assignedAt: assigned_at,
-    program: sortProgram(program),
-  }));
+  const user = await requireUser("client");
+  const rows = await asUser(user.id, (db) =>
+    db
+      .selectFrom("client_programs")
+      .innerJoin("programs", "programs.id", "client_programs.program_id")
+      .select((eb) => [
+        "client_programs.assigned_at",
+        "programs.id",
+        "programs.name",
+        "programs.description",
+        "programs.duration_weeks",
+        workoutsOf(eb),
+      ])
+      .orderBy("client_programs.assigned_at", "desc")
+      .execute(),
+  );
+  return rows.map(({ assigned_at, ...program }) => ({ assignedAt: assigned_at, program }));
 }
 
 export function formatPrescription(item: {

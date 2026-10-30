@@ -76,10 +76,19 @@ test("people can change their name and password", async ({ page }) => {
   await page.getByRole("button", { name: "Save name" }).click();
   await expect(page.getByText("Name saved.")).toBeVisible();
 
+  await page.getByLabel("Current password").fill("a-good-password");
   await page.getByLabel("New password", { exact: true }).fill("first-new-password");
   await page.getByLabel("Confirm new password").fill("something-else");
   await page.getByRole("button", { name: "Change password" }).click();
-  await expect(page.getByText("The two passwords don't match.")).toBeVisible();
+  await expect(page.getByText("The two new passwords don't match.")).toBeVisible();
+
+  await page.getByLabel("Current password").fill("not-my-password");
+  await page.getByLabel("New password", { exact: true }).fill("first-new-password");
+  await page.getByLabel("Confirm new password").fill("first-new-password");
+  await page.getByRole("button", { name: "Change password" }).click();
+  await expect(page.getByText("Your current password isn't right.")).toBeVisible();
+
+  await page.getByLabel("Current password").fill("a-good-password");
   await page.getByLabel("New password", { exact: true }).fill("first-new-password");
   await page.getByLabel("Confirm new password").fill("first-new-password");
   await page.getByRole("button", { name: "Change password" }).click();

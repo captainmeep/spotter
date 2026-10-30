@@ -98,7 +98,7 @@ test("an invited client can set a password, log in, and see their goals", async 
 
   await page.getByRole("button", { name: "Invite to Spotter" }).click();
   const linkInput = page.getByLabel("Login link");
-  await expect(linkInput).toHaveValue(/\/auth\/confirm\?token_hash=/);
+  await expect(linkInput).toHaveValue(/\/invite\/[A-Za-z0-9_-]{43}$/);
   const inviteLink = await linkInput.inputValue();
   await page.keyboard.press("Escape");
   await expect(page.getByText("Invited", { exact: true })).toBeVisible();
@@ -108,7 +108,7 @@ test("an invited client can set a password, log in, and see their goals", async 
   const clientContext = await browser.newContext();
   const clientPage = await clientContext.newPage();
   await clientPage.goto(inviteLink);
-  await expect(clientPage).toHaveURL("/welcome");
+  await expect(clientPage).toHaveURL(/\/invite\//);
   await expect(clientPage.getByText("Welcome, Avery!")).toBeVisible();
   await clientPage.getByLabel("Password").fill("client-password-1");
   await clientPage.getByRole("button", { name: "Save password" }).click();

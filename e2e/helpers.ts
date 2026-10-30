@@ -1,7 +1,5 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { execFileSync } from "node:child_process";
 import { expect, type Browser, type Page } from "@playwright/test";
-import { createClient } from "@supabase/supabase-js";
 
 export const DEMO_PASSWORD = "password123";
 export const TRAINER_EMAIL = "trainer@example.com";
@@ -34,32 +32,16 @@ export function uniqueClient(label: string) {
   };
 }
 
-// The local Supabase settings written by `npm run local:up`.
-function localEnv() {
-  const env: Record<string, string> = {};
-  for (const line of readFileSync(join(process.cwd(), ".env.local"), "utf8").split("\n")) {
-    const match = line.match(/^([A-Z_]+)=(.*)$/);
-    if (match) env[match[1]] = match[2].replace(/^"(.*)"$/, "$1");
-  }
-  return env;
-}
-
 // Creates a brand-new trainer, who starts with no clients, and logs in as
-// them. Public sign-up is off, so this uses the admin API.
+// them. Public sign-up is off, so this uses the create-user script.
 export async function logInAsNewTrainer(page: Page, name = "Jordan Newcoach") {
-  const env = localEnv();
-  const admin = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SECRET_KEY, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
   const { email } = uniqueClient("trainer");
   const password = "a-good-password";
-  const { error } = await admin.auth.admin.createUser({
-    email,
-    password,
-    email_confirm: true,
-    user_metadata: { full_name: name },
-  });
-  if (error) throw error;
+  execFileSync(
+    "npx",
+    ["tsx", "--env-file=.env.local", "scripts/create-user.mts", "--email", email, "--name", name, "--password", password],
+    { stdio: "pipe" },
+  );
 
   await logIn(page, email, password);
   await expect(page).toHaveURL("/dashboard");
@@ -84,8 +66,9 @@ export async function addInvitedClient(page: Page, browser: Browser, label: stri
   const context = await browser.newContext();
   const clientPage = await context.newPage();
   await clientPage.goto(link);
-  await expect(clientPage).toHaveURL("/welcome");
-  await clientPage.getByRole("link", { name: "Skip for now" }).click();
+  await expect(clientPage).toHaveURL(/\/invite\//);
+  await clientPage.getByLabel("Password").fill("client-password-1");
+  await clientPage.getByRole("button", { name: "Save password and log in" }).click();
   await expect(clientPage).toHaveURL("/portal");
 
   return { ...client, clientUrl, clientPage, context };

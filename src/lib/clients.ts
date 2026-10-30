@@ -1,19 +1,21 @@
 import "server-only";
+import type { Selectable } from "kysely";
 import { z } from "zod";
-import type { Database } from "@/lib/database.types";
 import { requireUser } from "@/lib/auth";
-import { createClient } from "@/lib/supabase/server";
+import { asUser } from "@/lib/db";
+import type { ClientNotes, Clients, ClientStatus } from "@/lib/db/types";
 
-export type Client = Database["public"]["Tables"]["clients"]["Row"];
-export type ClientNote = Database["public"]["Tables"]["client_notes"]["Row"];
-export type ClientStatus = Database["public"]["Enums"]["client_status"];
+export type Client = Selectable<Clients>;
+export type ClientNote = Selectable<ClientNotes>;
+export type { ClientStatus };
 
 export const clientStatuses = ["active", "inactive"] as const satisfies ClientStatus[];
 
 const uuid = z.uuid();
 
-// Every function here checks the signed-in trainer itself. Row level security
-// is the second line of defense, so a trainer only ever sees their own clients.
+// Every function here checks the signed-in trainer itself, then queries with
+// asUser(), so row level security is the second line of defense: a trainer
+// only ever sees their own clients.
 
 export async function listClients({
   search,
@@ -22,73 +24,86 @@ export async function listClients({
   search?: string;
   status?: ClientStatus;
 }) {
-  await requireUser("trainer");
-  const supabase = await createClient();
+  const trainer = await requireUser("trainer");
+  const term = search?.trim();
 
-  let query = supabase
-    .from("clients")
-    .select("id, full_name, email, phone, status, user_id, invited_at")
-    .order("full_name");
-
-  if (status) query = query.eq("status", status);
-
-  // Drop characters that have a meaning in PostgREST filters.
-  const term = search?.replace(/[,%()"\\]/g, " ").trim();
-  if (term) {
-    query = query.or(`full_name.ilike.%${term}%,email.ilike.%${term}%,phone.ilike.%${term}%`);
-  }
-
-  const { data, error } = await query;
-  if (error) throw error;
-  return data;
+  return asUser(trainer.id, (db) => {
+    let query = db
+      .selectFrom("clients")
+      .select(["id", "full_name", "email", "phone", "status", "user_id", "invited_at"])
+      .orderBy("full_name");
+    if (status) query = query.where("status", "=", status);
+    if (term) {
+      const pattern = `%${term}%`;
+      query = query.where((eb) =>
+        eb.or([
+          eb("full_name", "ilike", pattern),
+          eb("email", "ilike", pattern),
+          eb("phone", "ilike", pattern),
+        ]),
+      );
+    }
+    return query.execute();
+  });
 }
 
 export async function getClient(id: string): Promise<Client | null> {
-  await requireUser("trainer");
+  const trainer = await requireUser("trainer");
   if (!uuid.safeParse(id).success) return null;
 
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("clients")
-    .select("*")
-    .eq("id", id)
-    .maybeSingle();
-  if (error) throw error;
-  return data;
+  const client = await asUser(trainer.id, (db) =>
+    db.selectFrom("clients").selectAll().where("id", "=", id).executeTakeFirst(),
+  );
+  return client ?? null;
 }
 
 export async function getClientNotes(clientId: string): Promise<ClientNote[]> {
-  await requireUser("trainer");
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("client_notes")
-    .select("*")
-    .eq("client_id", clientId)
-    .order("created_at", { ascending: false });
-  if (error) throw error;
-  return data;
+  const trainer = await requireUser("trainer");
+  return asUser(trainer.id, (db) =>
+    db
+      .selectFrom("client_notes")
+      .selectAll()
+      .where("client_id", "=", clientId)
+      .orderBy("created_at", "desc")
+      .execute(),
+  );
 }
 
 export async function countActiveClients() {
-  await requireUser("trainer");
-  const supabase = await createClient();
-  const { count, error } = await supabase
-    .from("clients")
-    .select("id", { count: "exact", head: true })
-    .eq("status", "active");
-  if (error) throw error;
-  return count ?? 0;
+  const trainer = await requireUser("trainer");
+  const result = await asUser(trainer.id, (db) =>
+    db
+      .selectFrom("clients")
+      .select((eb) => eb.fn.countAll<string>().as("count"))
+      .where("status", "=", "active")
+      .executeTakeFirstOrThrow(),
+  );
+  return Number(result.count);
 }
 
 // The signed-in client's own record, for the client portal.
 export async function getMyClientRecord() {
   const user = await requireUser("client");
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("clients")
-    .select("full_name, goals")
-    .eq("user_id", user.id)
-    .maybeSingle();
-  if (error) throw error;
-  return data;
+  const record = await asUser(user.id, (db) =>
+    db
+      .selectFrom("clients")
+      .select(["full_name", "goals"])
+      .where("user_id", "=", user.id)
+      .executeTakeFirst(),
+  );
+  return record ?? null;
+}
+
+// The signed-in client's trainer's name, for the client portal.
+export async function getMyTrainerName() {
+  const user = await requireUser("client");
+  // Row level security only lets a client read their own trainer's profile.
+  const trainer = await asUser(user.id, (db) =>
+    db
+      .selectFrom("profiles")
+      .select("full_name")
+      .where("role", "=", "trainer")
+      .executeTakeFirst(),
+  );
+  return trainer?.full_name ?? null;
 }

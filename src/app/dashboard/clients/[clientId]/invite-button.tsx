@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { INVITE_DAYS } from "@/lib/invite-settings";
 import { createInviteLink } from "../actions";
 
 export function InviteButton({
@@ -75,8 +76,8 @@ export function InviteButton({
           <DialogHeader>
             <DialogTitle>Send this link to {firstName}</DialogTitle>
             <DialogDescription>
-              It logs them in and asks them to choose a password. It works once
-              and expires in 24 hours.
+              They choose a password and are logged in. It works once and
+              expires in {INVITE_DAYS} days.
             </DialogDescription>
           </DialogHeader>
           <Input

@@ -1,8 +1,11 @@
 import "server-only";
 import { cache } from "react";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
+import { getAuth } from "@/lib/better-auth";
+import { getDb } from "@/lib/db";
 import { homePathFor, type Role } from "@/lib/routes";
-import { createClient } from "@/lib/supabase/server";
 
 export type CurrentUser = {
   id: string;
@@ -14,21 +17,22 @@ export type CurrentUser = {
 // The signed-in user, or null. Reads the session cookie, so call it inside a
 // <Suspense> boundary. Cached for the rest of the request.
 export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
-  const supabase = await createClient();
-  const { data } = await supabase.auth.getClaims();
-  const claims = data?.claims;
-  if (!claims) return null;
+  // Sessions are checked against the current time, so this can't be
+  // prerendered or prefetched. Render it per request.
+  await connection();
+  const session = await getAuth().api.getSession({ headers: await headers() });
+  if (!session) return null;
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role, full_name")
-    .eq("id", claims.sub)
-    .maybeSingle();
+  const profile = await getDb()
+    .selectFrom("profiles")
+    .select(["role", "full_name"])
+    .where("id", "=", session.user.id)
+    .executeTakeFirst();
   if (!profile) return null;
 
   return {
-    id: claims.sub,
-    email: claims.email ?? "",
+    id: session.user.id,
+    email: session.user.email,
     fullName: profile.full_name,
     role: profile.role,
   };

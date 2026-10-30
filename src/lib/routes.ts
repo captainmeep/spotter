@@ -1,6 +1,6 @@
-import type { Database } from "@/lib/database.types";
+import type { UserRole } from "@/lib/db/types";
 
-export type Role = Database["public"]["Enums"]["user_role"];
+export type Role = UserRole;
 
 // Where each kind of user lands after logging in.
 export function homePathFor(role: Role) {
@@ -8,12 +8,7 @@ export function homePathFor(role: Role) {
 }
 
 // Pages that need a signed-in user.
-export const protectedPrefixes = ["/dashboard", "/portal", "/welcome"];
+export const protectedPrefixes = ["/dashboard", "/portal"];
 
 // Pages only for signed-out visitors.
 export const authPages = ["/login"];
-
-// Only allow redirects to paths inside the app, never to another site.
-export function safeRedirectPath(path: string | null, fallback = "/") {
-  return path?.startsWith("/") && !path.startsWith("//") ? path : fallback;
-}

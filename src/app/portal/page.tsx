@@ -11,9 +11,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { requireUser } from "@/lib/auth";
-import { getMyClientRecord } from "@/lib/clients";
+import { getMyClientRecord, getMyTrainerName } from "@/lib/clients";
 import { getMyPrograms } from "@/lib/programs";
-import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "Home" };
 
@@ -56,24 +55,13 @@ export default function PortalPage() {
 
 async function Greeting() {
   const client = await requireUser("client");
-  const supabase = await createClient();
-  // Row level security only lets a client read their own trainer's profile.
-  const { data: trainer } = await supabase
-    .from("profiles")
-    .select("full_name")
-    .eq("role", "trainer")
-    .maybeSingle();
-
+  const trainerName = await getMyTrainerName();
   const firstName = client.fullName.split(" ")[0];
 
   return (
     <PageHeader
       title={firstName ? `Hi, ${firstName}` : "Hi there"}
-      description={
-        trainer?.full_name
-          ? `You're training with ${trainer.full_name}.`
-          : undefined
-      }
+      description={trainerName ? `You're training with ${trainerName}.` : undefined}
     />
   );
 }

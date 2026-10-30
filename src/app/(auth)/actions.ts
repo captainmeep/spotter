@@ -1,17 +1,25 @@
 "use server";
 
+import { APIError } from "better-auth/api";
 import { refresh } from "next/cache";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
+import { getAuth } from "@/lib/better-auth";
+import { asUser, getDb } from "@/lib/db";
 import { homePathFor } from "@/lib/routes";
-import { createClient } from "@/lib/supabase/server";
+import { findValidInvite, setUserPassword, markInviteUsed } from "@/lib/users";
 
 export type AuthFormState = {
   error?: string;
   // Sent back so the login form keeps the email after an error.
   email?: string;
 };
+
+function errorCode(error: unknown) {
+  return error instanceof APIError ? (error.body?.code as string | undefined) : undefined;
+}
 
 const loginSchema = z.object({
   email: z.email("Enter a valid email address."),
@@ -31,24 +39,25 @@ export async function login(
     return { error: parsed.error.issues[0].message, email };
   }
 
-  const supabase = await createClient();
-  const { data, error } = await supabase.auth.signInWithPassword(parsed.data);
-  if (error) {
-    return {
-      error:
-        error.code === "invalid_credentials"
-          ? "That email and password don't match."
-          : error.message,
-      email,
-    };
+  let userId: string;
+  try {
+    const result = await getAuth().api.signInEmail({
+      body: { email: parsed.data.email.toLowerCase(), password: parsed.data.password },
+      headers: await headers(),
+    });
+    userId = result.user.id;
+  } catch (error) {
+    if (errorCode(error) === "INVALID_EMAIL_OR_PASSWORD") {
+      return { error: "That email and password don't match.", email };
+    }
+    throw error;
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
+  const profile = await getDb()
+    .selectFrom("profiles")
     .select("role")
-    .eq("id", data.user.id)
-    .single();
-
+    .where("id", "=", userId)
+    .executeTakeFirst();
   redirect(homePathFor(profile?.role ?? "trainer"));
 }
 
@@ -57,28 +66,29 @@ const passwordSchema = z
   .min(8, "Use at least 8 characters for your password.")
   .max(72, "Keep your password under 72 characters.");
 
-// For clients arriving from an invite link: they're signed in, but have no
-// password yet.
-export async function setPassword(
+// Where invite links lead: the person chooses a password and is logged in.
+// Each link works once.
+export async function acceptInvite(
+  token: string,
   _prevState: AuthFormState,
   formData: FormData,
 ): Promise<AuthFormState> {
-  const user = await requireUser();
   const parsed = passwordSchema.safeParse(formData.get("password"));
   if (!parsed.success) return { error: parsed.error.issues[0].message };
 
-  const supabase = await createClient();
-  const { error } = await supabase.auth.updateUser({ password: parsed.data });
-  if (error) {
-    return {
-      error:
-        error.code === "same_password"
-          ? "That's already your password. Choose a different one, or skip this step."
-          : error.message,
-    };
-  }
+  const invite = await findValidInvite(token);
+  if (!invite || !(await markInviteUsed(invite.inviteId))) redirect("/link-expired");
 
-  redirect(homePathFor(user.role));
+  await setUserPassword(invite.userId, parsed.data);
+  // A new link means a fresh start: log out any other devices.
+  const ctx = await getAuth().$context;
+  await ctx.internalAdapter.deleteUserSessions(invite.userId);
+  await getAuth().api.signInEmail({
+    body: { email: invite.email, password: parsed.data },
+    headers: await headers(),
+  });
+
+  redirect(homePathFor(invite.role));
 }
 
 export type AccountFormState = { error?: string; message?: string };
@@ -97,12 +107,11 @@ export async function updateName(
   const parsed = nameSchema.safeParse(formData.get("full_name") ?? "");
   if (!parsed.success) return { error: parsed.error.issues[0].message };
 
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("profiles")
-    .update({ full_name: parsed.data })
-    .eq("id", user.id);
-  if (error) return { error: error.message };
+  await asUser(user.id, (db) =>
+    db.updateTable("profiles").set({ full_name: parsed.data }).where("id", "=", user.id).execute(),
+  );
+  // Keep the login's name in step.
+  await getDb().updateTable("user").set({ name: parsed.data }).where("id", "=", user.id).execute();
 
   refresh();
   return { message: "Name saved." };
@@ -113,28 +122,32 @@ export async function changePassword(
   formData: FormData,
 ): Promise<AccountFormState> {
   await requireUser();
+  const currentPassword = String(formData.get("current_password") ?? "");
   const password = formData.get("password");
   if (password !== formData.get("confirm_password")) {
-    return { error: "The two passwords don't match." };
+    return { error: "The two new passwords don't match." };
   }
   const parsed = passwordSchema.safeParse(password);
   if (!parsed.success) return { error: parsed.error.issues[0].message };
+  if (parsed.data === currentPassword) {
+    return { error: "That's already your password. Choose a different one." };
+  }
 
-  const supabase = await createClient();
-  const { error } = await supabase.auth.updateUser({ password: parsed.data });
-  if (error) {
-    return {
-      error:
-        error.code === "same_password"
-          ? "That's already your password. Choose a different one."
-          : error.message,
-    };
+  try {
+    await getAuth().api.changePassword({
+      body: { currentPassword, newPassword: parsed.data },
+      headers: await headers(),
+    });
+  } catch (error) {
+    if (errorCode(error) === "INVALID_PASSWORD") {
+      return { error: "Your current password isn't right." };
+    }
+    throw error;
   }
   return { message: "Password changed." };
 }
 
 export async function logout() {
-  const supabase = await createClient();
-  await supabase.auth.signOut();
+  await getAuth().api.signOut({ headers: await headers() });
   redirect("/login");
 }

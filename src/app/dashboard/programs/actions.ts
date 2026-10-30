@@ -4,12 +4,13 @@ import { refresh } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
+import { asUser, errorCode } from "@/lib/db";
 import starterExercises from "@/lib/starter-exercises.json";
-import { createClient } from "@/lib/supabase/server";
 
 // Every action checks the signed-in trainer itself: server actions can be
-// called directly, not only from our forms. Row level security makes sure a
-// trainer can only touch their own exercises, programs and clients.
+// called directly, not only from our forms. Queries run with asUser(), so row
+// level security makes sure a trainer can only touch their own exercises,
+// programs and clients.
 
 type Result = { error?: string };
 
@@ -44,47 +45,50 @@ function readExercise(formData: FormData) {
   });
 }
 
-function exerciseError(error: { code?: string; message: string }): Result {
-  return {
-    error: error.code === "23505" ? "You already have an exercise with that name." : error.message,
-  };
+function exerciseError(error: unknown): Result {
+  if (errorCode(error) === "23505") return { error: "You already have an exercise with that name." };
+  throw error;
 }
 
 export async function createExercise(formData: FormData): Promise<Result> {
-  await requireUser("trainer");
+  const trainer = await requireUser("trainer");
   const parsed = readExercise(formData);
   if (!parsed.success) return firstIssue(parsed.error);
 
-  const supabase = await createClient();
-  const { error } = await supabase.from("exercises").insert(parsed.data);
-  if (error) return exerciseError(error);
+  try {
+    await asUser(trainer.id, (db) => db.insertInto("exercises").values(parsed.data).execute());
+  } catch (error) {
+    return exerciseError(error);
+  }
   refresh();
   return {};
 }
 
 export async function updateExercise(exerciseId: string, formData: FormData): Promise<Result> {
-  await requireUser("trainer");
+  const trainer = await requireUser("trainer");
   const parsed = readExercise(formData);
   if (!parsed.success) return firstIssue(parsed.error);
 
-  const supabase = await createClient();
-  const { error } = await supabase.from("exercises").update(parsed.data).eq("id", exerciseId);
-  if (error) return exerciseError(error);
+  try {
+    await asUser(trainer.id, (db) =>
+      db.updateTable("exercises").set(parsed.data).where("id", "=", exerciseId).execute(),
+    );
+  } catch (error) {
+    return exerciseError(error);
+  }
   refresh();
   return {};
 }
 
 export async function deleteExercise(exerciseId: string): Promise<Result> {
-  await requireUser("trainer");
-  const supabase = await createClient();
-  const { error } = await supabase.from("exercises").delete().eq("id", exerciseId);
-  if (error) {
-    return {
-      error:
-        error.code === "23503"
-          ? "This exercise is used in a program. Remove it from those workouts first."
-          : error.message,
-    };
+  const trainer = await requireUser("trainer");
+  try {
+    await asUser(trainer.id, (db) => db.deleteFrom("exercises").where("id", "=", exerciseId).execute());
+  } catch (error) {
+    if (errorCode(error) === "23503") {
+      return { error: "This exercise is used in a program. Remove it from those workouts first." };
+    }
+    throw error;
   }
   refresh();
   return {};
@@ -92,17 +96,13 @@ export async function deleteExercise(exerciseId: string): Promise<Result> {
 
 // Adds the starter exercises the trainer doesn't have yet.
 export async function addStarterExercises(): Promise<Result> {
-  await requireUser("trainer");
-  const supabase = await createClient();
-  const { data: existing, error: listError } = await supabase.from("exercises").select("name");
-  if (listError) return { error: listError.message };
-
-  const taken = new Set(existing.map(({ name }) => name.toLowerCase()));
-  const missing = starterExercises.filter(({ name }) => !taken.has(name.toLowerCase()));
-  if (missing.length > 0) {
-    const { error } = await supabase.from("exercises").insert(missing);
-    if (error) return { error: error.message };
-  }
+  const trainer = await requireUser("trainer");
+  await asUser(trainer.id, async (db) => {
+    const existing = await db.selectFrom("exercises").select("name").execute();
+    const taken = new Set(existing.map(({ name }) => name.toLowerCase()));
+    const missing = starterExercises.filter(({ name }) => !taken.has(name.toLowerCase()));
+    if (missing.length > 0) await db.insertInto("exercises").values(missing).execute();
+  });
   refresh();
   return {};
 }
@@ -137,7 +137,7 @@ export async function createProgram(
   _prevState: ProgramFormState,
   formData: FormData,
 ): Promise<ProgramFormState> {
-  await requireUser("trainer");
+  const trainer = await requireUser("trainer");
   const values = {
     name: text(formData, "name"),
     description: text(formData, "description"),
@@ -146,75 +146,76 @@ export async function createProgram(
   const parsed = readProgram(formData);
   if (!parsed.success) return { ...firstIssue(parsed.error), values };
 
-  const supabase = await createClient();
-  const { data, error } = await supabase.from("programs").insert(parsed.data).select("id").single();
-  if (error) return { error: error.message, values };
-
-  redirect(`/dashboard/programs/${data.id}`);
+  const program = await asUser(trainer.id, (db) =>
+    db.insertInto("programs").values(parsed.data).returning("id").executeTakeFirstOrThrow(),
+  );
+  redirect(`/dashboard/programs/${program.id}`);
 }
 
 export async function updateProgram(programId: string, formData: FormData): Promise<Result> {
-  await requireUser("trainer");
+  const trainer = await requireUser("trainer");
   const parsed = readProgram(formData);
   if (!parsed.success) return firstIssue(parsed.error);
 
-  const supabase = await createClient();
-  const { error } = await supabase.from("programs").update(parsed.data).eq("id", programId);
-  if (error) return { error: error.message };
+  await asUser(trainer.id, (db) =>
+    db.updateTable("programs").set(parsed.data).where("id", "=", programId).execute(),
+  );
   refresh();
   return {};
 }
 
 export async function deleteProgram(programId: string): Promise<Result> {
-  await requireUser("trainer");
-  const supabase = await createClient();
-  const { error } = await supabase.from("programs").delete().eq("id", programId);
-  if (error) return { error: error.message };
+  const trainer = await requireUser("trainer");
+  await asUser(trainer.id, (db) => db.deleteFrom("programs").where("id", "=", programId).execute());
   redirect("/dashboard/programs");
 }
 
-// Copies a program with all its workouts, for tailoring it to one client.
+// Copies a program with all its workouts, for tailoring it to one client. All
+// in one transaction, so a failure leaves no half-made copy.
 export async function duplicateProgram(programId: string): Promise<Result> {
-  await requireUser("trainer");
-  const supabase = await createClient();
-  const { data: program, error } = await supabase
-    .from("programs")
-    .select(
-      "name, description, duration_weeks, program_workouts ( name, position, workout_exercises ( exercise_id, position, sets, reps, weight, rest, notes ) )",
-    )
-    .eq("id", programId)
-    .maybeSingle();
-  if (error) return { error: error.message };
-  if (!program) return { error: "That program doesn't exist anymore." };
+  const trainer = await requireUser("trainer");
+  const copyId = await asUser(trainer.id, async (db) => {
+    const program = await db
+      .selectFrom("programs")
+      .select(["name", "description", "duration_weeks"])
+      .where("id", "=", programId)
+      .executeTakeFirst();
+    if (!program) return null;
 
-  const { data: copy, error: copyError } = await supabase
-    .from("programs")
-    .insert({
-      name: `${program.name} (copy)`.slice(0, 100),
-      description: program.description,
-      duration_weeks: program.duration_weeks,
-    })
-    .select("id")
-    .single();
-  if (copyError) return { error: copyError.message };
+    const copy = await db
+      .insertInto("programs")
+      .values({ ...program, name: `${program.name} (copy)`.slice(0, 100) })
+      .returning("id")
+      .executeTakeFirstOrThrow();
 
-  for (const workout of program.program_workouts) {
-    const { data: newWorkout, error: workoutError } = await supabase
-      .from("program_workouts")
-      .insert({ program_id: copy.id, name: workout.name, position: workout.position })
-      .select("id")
-      .single();
-    if (workoutError) return { error: workoutError.message };
-
-    if (workout.workout_exercises.length > 0) {
-      const { error: exercisesError } = await supabase
-        .from("workout_exercises")
-        .insert(workout.workout_exercises.map((item) => ({ ...item, workout_id: newWorkout.id })));
-      if (exercisesError) return { error: exercisesError.message };
+    const workouts = await db
+      .selectFrom("program_workouts")
+      .select(["id", "name", "position"])
+      .where("program_id", "=", programId)
+      .execute();
+    for (const workout of workouts) {
+      const newWorkout = await db
+        .insertInto("program_workouts")
+        .values({ program_id: copy.id, name: workout.name, position: workout.position })
+        .returning("id")
+        .executeTakeFirstOrThrow();
+      const items = await db
+        .selectFrom("workout_exercises")
+        .select(["exercise_id", "position", "sets", "reps", "weight", "rest", "notes"])
+        .where("workout_id", "=", workout.id)
+        .execute();
+      if (items.length > 0) {
+        await db
+          .insertInto("workout_exercises")
+          .values(items.map((item) => ({ ...item, workout_id: newWorkout.id })))
+          .execute();
+      }
     }
-  }
+    return copy.id;
+  });
+  if (!copyId) return { error: "That program doesn't exist anymore." };
 
-  redirect(`/dashboard/programs/${copy.id}`);
+  redirect(`/dashboard/programs/${copyId}`);
 }
 
 // Workouts
@@ -226,48 +227,44 @@ const workoutNameSchema = z
   .max(100, "Keep the name under 100 characters.");
 
 export async function addWorkout(programId: string, formData: FormData): Promise<Result> {
-  await requireUser("trainer");
+  const trainer = await requireUser("trainer");
   const parsed = workoutNameSchema.safeParse(text(formData, "name"));
   if (!parsed.success) return firstIssue(parsed.error);
 
-  const supabase = await createClient();
-  const { data: last } = await supabase
-    .from("program_workouts")
-    .select("position")
-    .eq("program_id", programId)
-    .order("position", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const { error } = await supabase.from("program_workouts").insert({
-    program_id: programId,
-    name: parsed.data,
-    position: (last?.position ?? -1) + 1,
+  await asUser(trainer.id, async (db) => {
+    const last = await db
+      .selectFrom("program_workouts")
+      .select("position")
+      .where("program_id", "=", programId)
+      .orderBy("position", "desc")
+      .limit(1)
+      .executeTakeFirst();
+    await db
+      .insertInto("program_workouts")
+      .values({ program_id: programId, name: parsed.data, position: (last?.position ?? -1) + 1 })
+      .execute();
   });
-  if (error) return { error: error.message };
   refresh();
   return {};
 }
 
 export async function renameWorkout(workoutId: string, formData: FormData): Promise<Result> {
-  await requireUser("trainer");
+  const trainer = await requireUser("trainer");
   const parsed = workoutNameSchema.safeParse(text(formData, "name"));
   if (!parsed.success) return firstIssue(parsed.error);
 
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("program_workouts")
-    .update({ name: parsed.data })
-    .eq("id", workoutId);
-  if (error) return { error: error.message };
+  await asUser(trainer.id, (db) =>
+    db.updateTable("program_workouts").set({ name: parsed.data }).where("id", "=", workoutId).execute(),
+  );
   refresh();
   return {};
 }
 
 export async function deleteWorkout(workoutId: string): Promise<Result> {
-  await requireUser("trainer");
-  const supabase = await createClient();
-  const { error } = await supabase.from("program_workouts").delete().eq("id", workoutId);
-  if (error) return { error: error.message };
+  const trainer = await requireUser("trainer");
+  await asUser(trainer.id, (db) =>
+    db.deleteFrom("program_workouts").where("id", "=", workoutId).execute(),
+  );
   refresh();
   return {};
 }
@@ -283,30 +280,28 @@ function reorder<T extends { id: string }>(items: T[], id: string, direction: "u
 }
 
 export async function moveWorkout(workoutId: string, direction: "up" | "down"): Promise<Result> {
-  await requireUser("trainer");
-  const supabase = await createClient();
-  const { data: workout } = await supabase
-    .from("program_workouts")
-    .select("program_id")
-    .eq("id", workoutId)
-    .maybeSingle();
-  if (!workout) return { error: "That workout doesn't exist anymore." };
+  const trainer = await requireUser("trainer");
+  const moved = await asUser(trainer.id, async (db) => {
+    const workout = await db
+      .selectFrom("program_workouts")
+      .select("program_id")
+      .where("id", "=", workoutId)
+      .executeTakeFirst();
+    if (!workout) return false;
 
-  const { data: siblings, error } = await supabase
-    .from("program_workouts")
-    .select("id")
-    .eq("program_id", workout.program_id)
-    .order("position")
-    .order("created_at");
-  if (error) return { error: error.message };
-
-  for (const { id, position } of reorder(siblings, workoutId, direction) ?? []) {
-    const { error: updateError } = await supabase
-      .from("program_workouts")
-      .update({ position })
-      .eq("id", id);
-    if (updateError) return { error: updateError.message };
-  }
+    const siblings = await db
+      .selectFrom("program_workouts")
+      .select("id")
+      .where("program_id", "=", workout.program_id)
+      .orderBy("position")
+      .orderBy("created_at")
+      .execute();
+    for (const { id, position } of reorder(siblings, workoutId, direction) ?? []) {
+      await db.updateTable("program_workouts").set({ position }).where("id", "=", id).execute();
+    }
+    return true;
+  });
+  if (!moved) return { error: "That workout doesn't exist anymore." };
   refresh();
   return {};
 }
@@ -338,48 +333,51 @@ function readWorkoutExercise(formData: FormData) {
 }
 
 export async function addWorkoutExercise(workoutId: string, formData: FormData): Promise<Result> {
-  await requireUser("trainer");
+  const trainer = await requireUser("trainer");
   const exerciseId = z.uuid().safeParse(formData.get("exercise_id"));
   if (!exerciseId.success) return { error: "Choose an exercise." };
   const parsed = readWorkoutExercise(formData);
   if (!parsed.success) return firstIssue(parsed.error);
 
-  const supabase = await createClient();
-  const { data: last } = await supabase
-    .from("workout_exercises")
-    .select("position")
-    .eq("workout_id", workoutId)
-    .order("position", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const { error } = await supabase.from("workout_exercises").insert({
-    ...parsed.data,
-    workout_id: workoutId,
-    exercise_id: exerciseId.data,
-    position: (last?.position ?? -1) + 1,
+  await asUser(trainer.id, async (db) => {
+    const last = await db
+      .selectFrom("workout_exercises")
+      .select("position")
+      .where("workout_id", "=", workoutId)
+      .orderBy("position", "desc")
+      .limit(1)
+      .executeTakeFirst();
+    await db
+      .insertInto("workout_exercises")
+      .values({
+        ...parsed.data,
+        workout_id: workoutId,
+        exercise_id: exerciseId.data,
+        position: (last?.position ?? -1) + 1,
+      })
+      .execute();
   });
-  if (error) return { error: error.message };
   refresh();
   return {};
 }
 
 export async function updateWorkoutExercise(itemId: string, formData: FormData): Promise<Result> {
-  await requireUser("trainer");
+  const trainer = await requireUser("trainer");
   const parsed = readWorkoutExercise(formData);
   if (!parsed.success) return firstIssue(parsed.error);
 
-  const supabase = await createClient();
-  const { error } = await supabase.from("workout_exercises").update(parsed.data).eq("id", itemId);
-  if (error) return { error: error.message };
+  await asUser(trainer.id, (db) =>
+    db.updateTable("workout_exercises").set(parsed.data).where("id", "=", itemId).execute(),
+  );
   refresh();
   return {};
 }
 
 export async function removeWorkoutExercise(itemId: string): Promise<Result> {
-  await requireUser("trainer");
-  const supabase = await createClient();
-  const { error } = await supabase.from("workout_exercises").delete().eq("id", itemId);
-  if (error) return { error: error.message };
+  const trainer = await requireUser("trainer");
+  await asUser(trainer.id, (db) =>
+    db.deleteFrom("workout_exercises").where("id", "=", itemId).execute(),
+  );
   refresh();
   return {};
 }
@@ -388,30 +386,28 @@ export async function moveWorkoutExercise(
   itemId: string,
   direction: "up" | "down",
 ): Promise<Result> {
-  await requireUser("trainer");
-  const supabase = await createClient();
-  const { data: item } = await supabase
-    .from("workout_exercises")
-    .select("workout_id")
-    .eq("id", itemId)
-    .maybeSingle();
-  if (!item) return { error: "That exercise isn't in the workout anymore." };
+  const trainer = await requireUser("trainer");
+  const moved = await asUser(trainer.id, async (db) => {
+    const item = await db
+      .selectFrom("workout_exercises")
+      .select("workout_id")
+      .where("id", "=", itemId)
+      .executeTakeFirst();
+    if (!item) return false;
 
-  const { data: siblings, error } = await supabase
-    .from("workout_exercises")
-    .select("id")
-    .eq("workout_id", item.workout_id)
-    .order("position")
-    .order("created_at");
-  if (error) return { error: error.message };
-
-  for (const { id, position } of reorder(siblings, itemId, direction) ?? []) {
-    const { error: updateError } = await supabase
-      .from("workout_exercises")
-      .update({ position })
-      .eq("id", id);
-    if (updateError) return { error: updateError.message };
-  }
+    const siblings = await db
+      .selectFrom("workout_exercises")
+      .select("id")
+      .where("workout_id", "=", item.workout_id)
+      .orderBy("position")
+      .orderBy("created_at")
+      .execute();
+    for (const { id, position } of reorder(siblings, itemId, direction) ?? []) {
+      await db.updateTable("workout_exercises").set({ position }).where("id", "=", id).execute();
+    }
+    return true;
+  });
+  if (!moved) return { error: "That exercise isn't in the workout anymore." };
   refresh();
   return {};
 }
@@ -424,33 +420,32 @@ const shareSchema = z.object({
 });
 
 export async function shareProgram(formData: FormData): Promise<Result> {
-  await requireUser("trainer");
+  const trainer = await requireUser("trainer");
   const parsed = shareSchema.safeParse({
     program_id: formData.get("program_id"),
     client_id: formData.get("client_id"),
   });
   if (!parsed.success) return firstIssue(parsed.error);
 
-  const supabase = await createClient();
-  const { error } = await supabase.from("client_programs").insert(parsed.data);
-  if (error) {
-    return {
-      error: error.code === "23505" ? "This program is already shared with that client." : error.message,
-    };
+  try {
+    await asUser(trainer.id, (db) => db.insertInto("client_programs").values(parsed.data).execute());
+  } catch (error) {
+    if (errorCode(error) === "23505") return { error: "This program is already shared with that client." };
+    throw error;
   }
   refresh();
   return {};
 }
 
 export async function unshareProgram(programId: string, clientId: string): Promise<Result> {
-  await requireUser("trainer");
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("client_programs")
-    .delete()
-    .eq("program_id", programId)
-    .eq("client_id", clientId);
-  if (error) return { error: error.message };
+  const trainer = await requireUser("trainer");
+  await asUser(trainer.id, (db) =>
+    db
+      .deleteFrom("client_programs")
+      .where("program_id", "=", programId)
+      .where("client_id", "=", clientId)
+      .execute(),
+  );
   refresh();
   return {};
 }

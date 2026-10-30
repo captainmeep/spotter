@@ -1,6 +1,6 @@
 # Spotter's production image, for Google Cloud Run (or any container host).
-# Supabase settings are read at runtime: SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY
-# and SUPABASE_SECRET_KEY.
+# Settings are read at runtime: the database (DATABASE_URL, or DB_HOST, DB_NAME,
+# DB_USER and DB_PASSWORD), BETTER_AUTH_SECRET and BETTER_AUTH_URL.
 
 FROM node:22-slim AS deps
 WORKDIR /app
@@ -13,6 +13,11 @@ ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
+
+# Tools image: the full project, for one-off jobs like database migrations
+# (npx tsx scripts/migrate.mts) and creating logins (scripts/create-user.mts).
+FROM build AS tools
+CMD ["npx", "tsx", "scripts/migrate.mts"]
 
 FROM node:22-slim AS run
 WORKDIR /app

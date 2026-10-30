@@ -6,8 +6,13 @@ import { refresh } from "next/cache";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { clientStatuses } from "@/lib/clients";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
+import { asUser, errorCode, getDb } from "@/lib/db";
+import {
+  createInvite,
+  createUserWithProfile,
+  deleteUser,
+  findUserByEmail,
+} from "@/lib/users";
 
 // Every action checks the signed-in trainer itself: server actions can be
 // called directly, not only from our forms.
@@ -45,29 +50,30 @@ function readClientForm(formData: FormData) {
   return { values, parsed: clientSchema.safeParse(values) };
 }
 
-function saveError(error: { code?: string; message: string }) {
-  return error.code === "23505"
-    ? "You already have a client with that email address."
-    : error.message;
+function saveError(error: unknown) {
+  if (errorCode(error) === "23505") return "You already have a client with that email address.";
+  throw error;
 }
 
 export async function createClientRecord(
   _prevState: ClientFormState,
   formData: FormData,
 ): Promise<ClientFormState> {
-  await requireUser("trainer");
+  const trainer = await requireUser("trainer");
   const { values, parsed } = readClientForm(formData);
   if (!parsed.success) return { error: parsed.error.issues[0].message, values };
 
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("clients")
-    .insert(parsed.data)
-    .select("id")
-    .single();
-  if (error) return { error: saveError(error), values };
+  let clientId: string;
+  try {
+    const client = await asUser(trainer.id, (db) =>
+      db.insertInto("clients").values(parsed.data).returning("id").executeTakeFirstOrThrow(),
+    );
+    clientId = client.id;
+  } catch (error) {
+    return { error: saveError(error), values };
+  }
 
-  redirect(`/dashboard/clients/${data.id}`);
+  redirect(`/dashboard/clients/${clientId}`);
 }
 
 export async function updateClientRecord(
@@ -75,52 +81,53 @@ export async function updateClientRecord(
   _prevState: ClientFormState,
   formData: FormData,
 ): Promise<ClientFormState> {
-  await requireUser("trainer");
+  const trainer = await requireUser("trainer");
   const { values, parsed } = readClientForm(formData);
   if (!parsed.success) return { error: parsed.error.issues[0].message, values };
 
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("clients")
-    .update(parsed.data)
-    .eq("id", clientId)
-    .select("id");
-  if (error) return { error: saveError(error), values };
-  if (data.length === 0) return { error: "That client doesn't exist anymore.", values };
+  try {
+    const updated = await asUser(trainer.id, (db) =>
+      db.updateTable("clients").set(parsed.data).where("id", "=", clientId).returning("id").execute(),
+    );
+    if (updated.length === 0) return { error: "That client doesn't exist anymore.", values };
+  } catch (error) {
+    return { error: saveError(error), values };
+  }
 
   redirect(`/dashboard/clients/${clientId}`);
 }
 
+// The client record and, if they have one, their login, after checking it
+// really is this trainer's client.
+async function findOwnClient(trainerId: string, clientId: string) {
+  return asUser(trainerId, async (db) => {
+    const client = await db
+      .selectFrom("clients")
+      .select(["id", "full_name", "email", "user_id"])
+      .where("id", "=", clientId)
+      .executeTakeFirst();
+    if (!client?.user_id) return client ? { client, loginId: null } : null;
+
+    const login = await db
+      .selectFrom("profiles")
+      .select("id")
+      .where("id", "=", client.user_id)
+      .where("role", "=", "client")
+      .where("trainer_id", "=", trainerId)
+      .executeTakeFirst();
+    return { client, loginId: login?.id ?? null };
+  });
+}
+
 export async function deleteClientRecord(clientId: string) {
   const trainer = await requireUser("trainer");
-  const supabase = await createClient();
+  const found = await findOwnClient(trainer.id, clientId);
+  if (!found) return { error: "That client doesn't exist anymore." };
 
-  const { data: client } = await supabase
-    .from("clients")
-    .select("id, user_id")
-    .eq("id", clientId)
-    .maybeSingle();
-  if (!client) return { error: "That client doesn't exist anymore." };
+  // Remove the client's login too, so they can't log in after being deleted.
+  if (found.loginId) await deleteUser(found.loginId);
 
-  // Remove the client's login too, so they can't sign in after being deleted.
-  // Check it really is this trainer's client login before using the admin API.
-  if (client.user_id) {
-    const { data: login } = await supabase
-      .from("profiles")
-      .select("id")
-      .eq("id", client.user_id)
-      .eq("role", "client")
-      .eq("trainer_id", trainer.id)
-      .maybeSingle();
-    if (login) {
-      const { error } = await createAdminClient().auth.admin.deleteUser(login.id);
-      if (error) return { error: `Couldn't remove the client's login: ${error.message}` };
-    }
-  }
-
-  const { error } = await supabase.from("clients").delete().eq("id", clientId);
-  if (error) return { error: error.message };
-
+  await asUser(trainer.id, (db) => db.deleteFrom("clients").where("id", "=", clientId).execute());
   redirect("/dashboard/clients");
 }
 
@@ -138,119 +145,71 @@ export async function addNote(
   _prevState: NoteFormState,
   formData: FormData,
 ): Promise<NoteFormState> {
-  await requireUser("trainer");
+  const trainer = await requireUser("trainer");
   const body = String(formData.get("body") ?? "");
   const parsed = noteSchema.safeParse(body);
   if (!parsed.success) return { error: parsed.error.issues[0].message, body };
 
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("client_notes")
-    .insert({ client_id: clientId, body: parsed.data });
-  if (error) return { error: error.message, body };
+  try {
+    await asUser(trainer.id, (db) =>
+      db.insertInto("client_notes").values({ client_id: clientId, body: parsed.data }).execute(),
+    );
+  } catch (error) {
+    if (errorCode(error) === "42501") return { error: "That client doesn't exist anymore.", body };
+    throw error;
+  }
 
   refresh();
   return {};
 }
 
 export async function deleteNote(noteId: string) {
-  await requireUser("trainer");
-  const supabase = await createClient();
-  const { error } = await supabase.from("client_notes").delete().eq("id", noteId);
-  if (error) return { error: error.message };
+  const trainer = await requireUser("trainer");
+  await asUser(trainer.id, (db) => db.deleteFrom("client_notes").where("id", "=", noteId).execute());
   refresh();
   return {};
 }
 
 export type InviteResult = { link?: string; error?: string };
 
-// Creates a one-time link that signs the client in and asks them to choose a
-// password. The trainer shares it however they like (text, email, WhatsApp).
+// Creates a one-time link where the client chooses a password and is logged
+// in. The trainer shares it however they like (text, email, WhatsApp).
 export async function createInviteLink(clientId: string): Promise<InviteResult> {
   const trainer = await requireUser("trainer");
-  const supabase = await createClient();
+  const found = await findOwnClient(trainer.id, clientId);
+  if (!found) return { error: "That client doesn't exist anymore." };
+  const { client } = found;
 
-  const { data: client } = await supabase
-    .from("clients")
-    .select("id, full_name, email, user_id")
-    .eq("id", clientId)
-    .maybeSingle();
-  if (!client) return { error: "That client doesn't exist anymore." };
+  let userId = found.loginId;
+  if (client.user_id && !userId) return { error: "This client's login couldn't be found." };
 
-  const admin = createAdminClient();
-  const requestHeaders = await headers();
-  const origin =
-    requestHeaders.get("origin") ?? `https://${requestHeaders.get("host")}`;
-  const now = new Date().toISOString();
-
-  // Already invited: send a fresh sign-in link for the existing login.
-  if (client.user_id) {
-    const { data: login } = await supabase
-      .from("profiles")
-      .select("id")
-      .eq("id", client.user_id)
-      .eq("role", "client")
-      .eq("trainer_id", trainer.id)
-      .maybeSingle();
-    if (!login) return { error: "This client's login couldn't be found." };
-
-    const { data: authUser, error: userError } =
-      await admin.auth.admin.getUserById(login.id);
-    if (userError || !authUser.user.email) {
-      return { error: "This client's login couldn't be found." };
+  // Not invited yet: create their login as this trainer's client.
+  if (!userId) {
+    if (!client.email) return { error: "Add an email address for this client first." };
+    if (await findUserByEmail(client.email)) {
+      return {
+        error: "That email address already has a Spotter account. Use a different email for this client.",
+      };
     }
-
-    const { data, error } = await admin.auth.admin.generateLink({
-      type: "magiclink",
-      email: authUser.user.email,
+    const user = await createUserWithProfile({
+      email: client.email,
+      name: client.full_name,
+      role: "client",
+      trainerId: trainer.id,
     });
-    if (error) return { error: error.message };
-
-    await admin.from("clients").update({ invited_at: now }).eq("id", client.id);
-    refresh();
-    return { link: confirmLink(origin, data.properties.hashed_token, "magiclink") };
+    userId = user.id;
   }
 
-  if (!client.email) {
-    return { error: "Add an email address for this client first." };
-  }
+  const token = await createInvite(userId);
+  // Linking the login is server work, so it runs as the database owner.
+  await getDb()
+    .updateTable("clients")
+    .set({ user_id: userId, invited_at: new Date() })
+    .where("id", "=", client.id)
+    .execute();
 
-  // New invite: create the login, then make it this trainer's client.
-  const { data, error } = await admin.auth.admin.generateLink({
-    type: "invite",
-    email: client.email,
-    options: { data: { full_name: client.full_name } },
-  });
-  if (error) {
-    return {
-      error:
-        error.code === "email_exists"
-          ? "That email address already has a Spotter account. Use a different email for this client."
-          : error.message,
-    };
-  }
-
-  const userId = data.user.id;
-  const { error: roleError } = await admin.auth.admin.updateUserById(userId, {
-    app_metadata: { role: "client", trainer_id: trainer.id },
-  });
-  const { error: linkError } = roleError
-    ? { error: roleError }
-    : await admin
-        .from("clients")
-        .update({ user_id: userId, invited_at: now })
-        .eq("id", client.id);
-  if (linkError) {
-    // Don't leave a half-made login behind.
-    await admin.auth.admin.deleteUser(userId);
-    return { error: `Couldn't create the invite: ${linkError.message}` };
-  }
-
+  const requestHeaders = await headers();
+  const origin = requestHeaders.get("origin") ?? `https://${requestHeaders.get("host")}`;
   refresh();
-  return { link: confirmLink(origin, data.properties.hashed_token, "invite") };
-}
-
-function confirmLink(origin: string, tokenHash: string, type: "invite" | "magiclink") {
-  const params = new URLSearchParams({ token_hash: tokenHash, type, next: "/welcome" });
-  return `${origin}/auth/confirm?${params}`;
+  return { link: `${origin}/invite/${token}` };
 }
